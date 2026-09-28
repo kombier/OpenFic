@@ -438,6 +438,9 @@ export function AgentComposerEditor({
       }
 
       if (event.key !== "Enter") return;
+      // IME composition guard: when a CJK input method is composing (pinyin
+      // candidates etc.), Enter confirms the composition and must not submit.
+      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
       if (event.shiftKey) {
         if (!editor) return;
         event.preventDefault();
