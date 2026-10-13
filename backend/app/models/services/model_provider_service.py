@@ -302,7 +302,18 @@ class ModelProviderService:
         if existing.is_builtin:
             raise ValueError("内置提供商不允许编辑")
         if existing.provider_type == OPENAI_CODEX_PROVIDER_TYPE:
-            raise ValueError("OpenAI Codex 连接必须通过 OAuth 重新授权或断开")
+            # Codex 连接的凭证由 OAuth 管理；编辑对话框会原样带回 url/provider_type
+            # （且编辑态 api_key 为空），故按值比对：仅名称可改，凭证类实质变更仍拒绝。
+            credential_fields_changed = (
+                (url is not None and url != existing.url)
+                or (api_key is not None and api_key != "")
+                or (provider_type is not None and provider_type != existing.provider_type)
+                or (custom_headers is not None and len(custom_headers) > 0)
+            )
+            if credential_fields_changed:
+                raise ValueError(
+                    "OpenAI Codex 连接的凭证类字段必须通过 OAuth 重新授权或断开；仅支持修改名称"
+            )
 
         # 加密 API Key（如果提供）
         encrypted_key = None

@@ -506,3 +506,101 @@ async def test_create_provider_uses_supplied_url_when_directory_provider_lacks_a
     )
 
     assert captured["url"] == "https://override.example/v1"
+
+
+def _codex_provider() -> ModelProvider:
+    return ModelProvider(
+        id="codex-1",
+        name="OpenAI Codex (user@example.com, AbCd1234)",
+        provider_type="openai-codex",
+        url="https://api.openai.com/v1",
+        api_key_encrypted="",
+        is_builtin=False,
+    )
+
+
+async def _async_return(value):
+    return value
+
+
+@pytest.mark.asyncio
+async def test_update_codex_provider_allows_name_only(monkeypatch):
+    """Codex 连接仅改名称应被放行（凭证类字段不传）。"""
+    service = ModelProviderService(EncryptionService("id-hEPdEELwlgep9FQhcYQtX7ow188l7WHwy65qOZGQ="))
+    existing = _codex_provider()
+    monkeypatch.setattr(
+        "app.models.services.model_provider_service.model_provider_repo.get_by_id",
+        lambda session, pid: _async_return(existing),
+    )
+    updated = []
+    async def fake_update(session, provider_id, **kwargs):
+        updated.append(kwargs)
+        return existing
+    monkeypatch.setattr(
+        "app.models.services.model_provider_service.model_provider_repo.update",
+        fake_update,
+    )
+
+    class _Session:
+        async def commit(self) -> None:
+            return None
+
+    result = await service.update_provider(_Session(), "codex-1", name="OpenAI Codex")
+    assert result is existing
+    assert updated and updated[0]["name"] == "OpenAI Codex"
+
+
+@pytest.mark.asyncio
+async def test_update_codex_provider_allows_unchanged_resubmission(monkeypatch):
+    """编辑对话框会原样带回 url/provider_type 且 api_key 为空——应视为无变更放行。"""
+    service = ModelProviderService(EncryptionService("id-hEPdEELwlgep9FQhcYQtX7ow188l7WHwy65qOZGQ="))
+    existing = _codex_provider()
+    monkeypatch.setattr(
+        "app.models.services.model_provider_service.model_provider_repo.get_by_id",
+        lambda session, pid: _async_return(existing),
+    )
+    monkeypatch.setattr(
+        "app.models.services.model_provider_service.model_provider_repo.update",
+        lambda session, provider_id, **kwargs: _async_return(existing),
+    )
+
+    class _Session:
+        async def commit(self) -> None:
+            return None
+
+    await service.update_provider(
+        _Session(),
+        "codex-1",
+        name="OpenAI Codex",
+        url="https://api.openai.com/v1",
+        api_key="",
+        provider_type="openai-codex",
+        custom_headers=[],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"url": "https://evil.example/v1"},
+        {"api_key": "sk-leaked"},
+        {"provider_type": "openai-compatible"},
+        {"custom_headers": [{"key": "X-Probe", "value": "1"}]},
+    ],
+)
+async def test_update_codex_provider_rejects_credential_changes(monkeypatch, changed):
+    """凭证类字段实质变更必须仍然拒绝。"""
+    service = ModelProviderService(EncryptionService("id-hEPdEELwlgep9FQhcYQtX7ow188l7WHwy65qOZGQ="))
+    existing = _codex_provider()
+    monkeypatch.setattr(
+        "app.models.services.model_provider_service.model_provider_repo.get_by_id",
+        lambda session, pid: _async_return(existing),
+    )
+
+    class _Session:
+        async def commit(self) -> None:
+            return None
+
+    with pytest.raises(ValueError, match="仅支持修改名称"):
+        await service.update_provider(_Session(), "codex-1", name="OpenAI Codex", **changed)
