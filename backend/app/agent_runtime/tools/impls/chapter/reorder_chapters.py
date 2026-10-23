@@ -48,60 +48,63 @@ class ReorderChaptersTool(AgentTool):
             raise ToolExecutionError("缺少当前 revision，无法执行章节重排")
         session = await create_session()
         try:
-            volumes = await volume_repo.list_by_project(session, self.project_id)
-            volume = resolve_volume_from_list(
-                volumes, VolumeRef.model_validate(volume_ref)
-            )
-            volume_id = volume.id
-
-            volume_chapters = await chapter_repo.list_by_volume(session, volume_id)
-            ref_models = [ChapterRef.model_validate(ref) for ref in ordered_chapter_refs]
-
-            # 将每个传入的章节引用解析为卷内的具体章节
-            resolved: list = []
-            used_ids: set[str] = set()
-            for ref_model in ref_models:
-                matched = await chapter_repo.get_by_volume_ref(
-                    session,
-                    volume_id,
-                    ref_type=ref_model.type,
-                    ref_value=ref_model.value,
-                )
-                if matched is None:
-                    raise ToolExecutionError(
-                        f"未在卷「{volume.title}」中找到章节（{ref_model.type}={ref_model.value}）"
-                    )
-                if matched.id in used_ids:
-                    raise ToolExecutionError(
-                        f"章节引用重复：{matched.title}（{ref_model.type}={ref_model.value}）"
-                    )
-                used_ids.add(matched.id)
-                resolved.append(matched)
-
-            existing_ids = {chapter.id for chapter in volume_chapters}
-            if used_ids != existing_ids:
-                missing = [
-                    chapter.title
-                    for chapter in volume_chapters
-                    if chapter.id not in used_ids
-                ]
-                extra = [
-                    chapter.title
-                    for chapter in resolved
-                    if chapter.id not in existing_ids
-                ]
-                raise ToolExecutionError(
-                    "章节引用必须与卷内现有章节一一对应："
-                    f"缺少 {missing or '无'}；多余 {extra or '无'}"
-                )
-
-            before = images_by_id(volume_chapters)
-            ordered_ids = [chapter.id for chapter in resolved]
-            # rollback 会使 ORM 对象 expire；title 等展示字段必须在 rollback 前取出纯值。
-            volume_title = volume.title.strip()
-            await session.rollback()
-
+            # 读-校验-写整体持有章节锁：before 快照必须取自锁内最新状态，
+            # 否则锁外读到的旧正文会进修订记录，回滚时覆盖其他工具并发
+            # 提交的正文修改（维护者 review 指出的竞态）。
             async with keyed_locks([("chapters", self.project_id)]):
+                volumes = await volume_repo.list_by_project(session, self.project_id)
+                volume = resolve_volume_from_list(
+                    volumes, VolumeRef.model_validate(volume_ref)
+                )
+                volume_id = volume.id
+
+                volume_chapters = await chapter_repo.list_by_volume(session, volume_id)
+                ref_models = [ChapterRef.model_validate(ref) for ref in ordered_chapter_refs]
+
+                # 将每个传入的章节引用解析为卷内的具体章节
+                resolved: list = []
+                used_ids: set[str] = set()
+                for ref_model in ref_models:
+                    matched = await chapter_repo.get_by_volume_ref(
+                        session,
+                        volume_id,
+                        ref_type=ref_model.type,
+                        ref_value=ref_model.value,
+                    )
+                    if matched is None:
+                        raise ToolExecutionError(
+                            f"未在卷「{volume.title}」中找到章节（{ref_model.type}={ref_model.value}）"
+                        )
+                    if matched.id in used_ids:
+                        raise ToolExecutionError(
+                            f"章节引用重复：{matched.title}（{ref_model.type}={ref_model.value}）"
+                        )
+                    used_ids.add(matched.id)
+                    resolved.append(matched)
+
+                existing_ids = {chapter.id for chapter in volume_chapters}
+                if used_ids != existing_ids:
+                    missing = [
+                        chapter.title
+                        for chapter in volume_chapters
+                        if chapter.id not in used_ids
+                    ]
+                    extra = [
+                        chapter.title
+                        for chapter in resolved
+                        if chapter.id not in existing_ids
+                    ]
+                    raise ToolExecutionError(
+                        "章节引用必须与卷内现有章节一一对应："
+                        f"缺少 {missing or '无'}；多余 {extra or '无'}"
+                    )
+
+                before = images_by_id(volume_chapters)
+                ordered_ids = [chapter.id for chapter in resolved]
+                # rollback 会使 ORM 对象 expire；title 等展示字段必须在 rollback 前取出纯值。
+                volume_title = volume.title.strip()
+                await session.rollback()
+
                 updated = await chapter_service.reorder_chapters(
                     session, volume_id, ordered_ids
                 )

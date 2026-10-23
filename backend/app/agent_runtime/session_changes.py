@@ -222,7 +222,6 @@ _CHANGE_TOOL_NAMES = (
     "edit_chapter",
     "delete_chapter",
     "move_chapter_to_volume",
-    "reorder_chapters",
     "write_note",
     "edit_note",
     "delete_note",
