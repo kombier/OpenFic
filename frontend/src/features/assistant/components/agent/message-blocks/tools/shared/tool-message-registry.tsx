@@ -8,6 +8,7 @@ import {
   UserRoundPen,
   UserRoundX,
   FilePenLine,
+  ArrowDownUp,
   FileText,
   FileXCorner,
   FolderPen,
@@ -574,6 +575,58 @@ const TOOL_REGISTRY = {
       const targetLabel = getVolumeRefLabel(message, "target_volume_ref");
       if (chapterLabel && targetLabel) return `${chapterLabel} \u2192 ${targetLabel}`;
       return chapterLabel ?? targetLabel;
+    },
+  },
+  reorder_chapters: {
+    toolName: "reorder_chapters",
+    group: "volume",
+    tag: "move",
+    isExplore: false,
+    contentMode: "hidden",
+    icon: ArrowDownUp,
+    getTitle: () => i18n.t("assistant.tools.reorderChapters"),
+    getDetail: (message) => {
+      // 已执行完成：展示新顺序的章节标题列表，让重排决策可见可审。
+      const resultData = getToolResultData(message);
+      if (isRecord(resultData)) {
+        const metadata = resultData.metadata;
+        if (isRecord(metadata) && Array.isArray(metadata.new_order)) {
+          const titles = metadata.new_order
+            .map((item) => (isRecord(item) ? asString(item.title) : undefined))
+            .filter((title): title is string => Boolean(title));
+          if (titles.length > 0) {
+            return `${getVolumeRefLabel(message, "volume_ref") ?? ""}：${titles.join(" → ")}`;
+          }
+        }
+      }
+      // 审批/执行前：展示调用方拟定的顺序（title 引用直接可见，
+      // order 引用列序号），审批时即可核对重排决策。
+      const volumeLabel = getVolumeRefLabel(message, "volume_ref");
+      const refs = getStreamingData(message).ordered_chapter_refs;
+      if (Array.isArray(refs) && refs.length > 0) {
+        const labels = refs
+          .map((ref) => {
+            if (!isRecord(ref)) return undefined;
+            if (asString(ref.type) !== "title" && asString(ref.type) !== "order") {
+              return undefined;
+            }
+            // 按 type 决定格式（order 的 value 可能是数字字符串）。
+            const value = String(ref.value);
+            return asString(ref.type) === "title" ? `「${value}」` : `#${value}`;
+          })
+          .filter((label): label is string => Boolean(label));
+        if (labels.length > 0) {
+          return `${volumeLabel ?? ""}：${labels.join(" → ")}`;
+        }
+      }
+      const count = Array.isArray(refs) ? refs.length : 0;
+      if (volumeLabel && count > 0) {
+        return i18n.t("assistant.tools.reorderChaptersDetail", {
+          volume: volumeLabel,
+          count,
+        });
+      }
+      return volumeLabel ?? undefined;
     },
   },
   read_chapter_summaries: {

@@ -63,6 +63,29 @@ function getApprovalSummary(toolName: string, toolArgs: Record<string, unknown>)
       return `${i18n.t("assistant.tools.content")} ${chapterLabel}`;
     case "apply_chapter_operations":
       return i18n.t("assistant.batchEditChapters");
+    case "reorder_chapters": {
+      // 审批摘要展示拟定顺序，重排决策在批准前即可核对。
+      const refs = toolArgs.ordered_chapter_refs;
+      const labels =
+        Array.isArray(refs) && refs.length > 0
+          ? refs
+              .map((ref) => {
+                if (typeof ref !== "object" || ref === null) return undefined;
+                const record = ref as Record<string, unknown>;
+                const value = record.value;
+                if (record.type !== "title" && record.type !== "order") {
+                  return undefined;
+                }
+                // 按 type 决定格式：order 引用的 value 可能是数字字符串，
+                // 不能按值类型判断，否则 "#2" 会被显示成标题「2」。
+                return record.type === "title" ? `「${String(value)}」` : `#${String(value)}`;
+              })
+              .filter((label): label is string => Boolean(label))
+          : [];
+      const suffix =
+        labels.length > 0 ? labels.join(" → ") : i18n.t("assistant.tools.reorderChapters");
+      return `${i18n.t("assistant.tools.reorderChapters")} ${suffix}`;
+    }
     default:
       return toolName
         ? i18n.t("assistant.executeTool", { toolName })

@@ -7,8 +7,9 @@ from datetime import UTC, datetime
 import json
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import col
 
 from app.agent_runtime.persistence import compaction_repo, repo as message_repo
@@ -993,10 +994,39 @@ async def rollback_revision_for_session(
     affected_volume_ids: set[str] = set()
     deletes = [item for item in restore_by_chapter.values() if not item.exists]
     upserts = [item for item in restore_by_chapter.values() if item.exists]
+
+    # 两阶段 order 恢复（Phase 1 腾位）：恢复快照可能包含序号交换（如 reorder
+    # 后回滚），逐章写回正数 order 会先撞上其它章节仍占用的序号，触发
+    # uq_chapters_volume_order 唯一约束冲突。先将要恢复的现存章节 order
+    # 全部移入唯一负值腾出正数空间，再走下方逐章恢复——与
+    # chapter_repo.update_orders 的两阶段策略同理。
+    #
+    # before 快照必须在腾位前固化：Phase 1 的 Core UPDATE 不回写 ORM 对象，
+    # 且腾位检查加载的临时对象随时可能被 identity map 弱引用回收，恢复循环
+    # 重新查询会拿到负值 order——必须以腾位前的真实状态为准。
+    before_images: dict[str, ChapterImage] = {}
+    displaced_ids: list[str] = []
+    for snapshot in restore_by_chapter.values():
+        current = await chapter_repo.get_by_id(session, snapshot.chapter_id)
+        if current is None:
+            continue
+        before_images[snapshot.chapter_id] = _image_from_chapter(current)
+        if snapshot.exists:
+            displaced_ids.append(snapshot.chapter_id)
+    if displaced_ids:
+        await session.execute(
+            update(Chapter)
+            .where(col(Chapter.id).in_(displaced_ids))
+            .values(order=-col(Chapter.order), updated_at=datetime.now(UTC))
+            .execution_options(synchronize_session=False)
+        )
+        await session.flush()
+    displaced_set = set(displaced_ids)
+
     for snapshot in [*deletes, *upserts]:
         affected.append(snapshot.chapter_id)
         current = await chapter_repo.get_by_id(session, snapshot.chapter_id)
-        before_image = _image_from_chapter(current) if current is not None else None
+        before_image = before_images.get(snapshot.chapter_id)
         after_image = _image_from_snapshot(snapshot)
         if before_image is not None:
             affected_volume_ids.add(before_image.volume_id)
@@ -1028,6 +1058,11 @@ async def rollback_revision_for_session(
             current.content = after_image.content
             current.word_count = after_image.word_count
             current.order = after_image.order
+            if snapshot.chapter_id in displaced_set:
+                # 腾位行必须强制写 order 列：腾位 UPDATE 不回写 ORM 对象，
+                # 若对象仍在 identity map 中存活，order 赋值与内存旧值净零
+                # 相同会被变更检测省略，腾位负值将残留入库。
+                flag_modified(current, "order")
             current.updated_at = datetime.now(UTC)
             await chapter_repo.update_chapter(session, current)
         if _has_changed(before_image, after_image):
