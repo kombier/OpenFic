@@ -1,5 +1,10 @@
 export type DesktopInstanceMode = "local" | "remote";
 export type DesktopAppearance = "light" | "dark";
+export type DownloadSourcePreference = "auto" | "default" | "mirror";
+
+export function isDownloadSourcePreference(value: unknown): value is DownloadSourcePreference {
+  return value === "auto" || value === "default" || value === "mirror";
+}
 
 export interface DesktopInstanceAppearance {
   appearance?: DesktopAppearance;
@@ -49,12 +54,14 @@ export interface DesktopInstance extends DesktopInstanceAppearance {
   /** Works data directory. `null` means the default (current) location. */
   dataDir: string | null;
   favorite?: boolean;
+  hasAccessKey?: boolean;
 }
 
 export interface DesktopConfig {
   activeInstanceId: string | null;
   instances: DesktopInstance[];
   zoomFactor?: number;
+  downloadSource?: DownloadSourcePreference;
 }
 
 export interface RuntimeConfigResponse {
@@ -64,4 +71,5 @@ export interface RuntimeConfigResponse {
 export const defaultDesktopConfig: DesktopConfig = {
   activeInstanceId: null,
   instances: [],
+  downloadSource: "auto",
 };

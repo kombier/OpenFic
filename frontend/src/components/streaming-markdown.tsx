@@ -1,5 +1,5 @@
 import { cjk } from "@streamdown/cjk";
-import { math } from "@streamdown/math";
+import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import {
   Streamdown,
@@ -33,7 +33,7 @@ const STREAMING_ANIMATION: AnimateOptions = {
 const STREAMDOWN_PLUGINS: PluginConfig = {
   cjk,
   code: createLimitedCodePlugin(),
-  math,
+  math: createMathPlugin({ singleDollarTextMath: true }),
   mermaid,
 };
 

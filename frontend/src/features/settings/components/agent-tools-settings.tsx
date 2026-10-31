@@ -215,6 +215,42 @@ const TOOL_DISPLAY_KEYS: Record<string, { name: string; description: string }> =
     name: "settings.agentTool.referenceSkill.name",
     description: "settings.agentTool.referenceSkill.description",
   },
+  list_skills: {
+    name: "settings.agentTool.listSkills.name",
+    description: "settings.agentTool.listSkills.description",
+  },
+  get_skill: {
+    name: "settings.agentTool.getSkill.name",
+    description: "settings.agentTool.getSkill.description",
+  },
+  get_skill_reference_doc: {
+    name: "settings.agentTool.getSkillReferenceDoc.name",
+    description: "settings.agentTool.getSkillReferenceDoc.description",
+  },
+  create_skill: {
+    name: "settings.agentTool.createSkill.name",
+    description: "settings.agentTool.createSkill.description",
+  },
+  edit_skill: {
+    name: "settings.agentTool.editSkill.name",
+    description: "settings.agentTool.editSkill.description",
+  },
+  create_skill_reference_doc: {
+    name: "settings.agentTool.createSkillReferenceDoc.name",
+    description: "settings.agentTool.createSkillReferenceDoc.description",
+  },
+  edit_skill_reference_doc: {
+    name: "settings.agentTool.editSkillReferenceDoc.name",
+    description: "settings.agentTool.editSkillReferenceDoc.description",
+  },
+  delete_skill: {
+    name: "settings.agentTool.deleteSkill.name",
+    description: "settings.agentTool.deleteSkill.description",
+  },
+  delete_skill_reference_doc: {
+    name: "settings.agentTool.deleteSkillReferenceDoc.name",
+    description: "settings.agentTool.deleteSkillReferenceDoc.description",
+  },
   web_fetch: {
     name: "settings.agentTool.webFetch.name",
     description: "settings.agentTool.webFetch.description",

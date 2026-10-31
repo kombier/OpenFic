@@ -174,6 +174,10 @@ SORT_COLUMNS = {
 }
 
 
+def _escape_like_pattern(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _conditions(filters: DashboardFilters) -> list[ColumnElement[bool]]:
     conditions: list[ColumnElement[bool]] = []
     if filters.project_id:
@@ -197,17 +201,17 @@ def _conditions(filters: DashboardFilters) -> list[ColumnElement[bool]]:
     if filters.end_at:
         conditions.append(col(LLMAuditLog.created_at) <= filters.end_at)
     if filters.search:
-        like_value = f"%{filters.search}%"
+        like_value = f"%{_escape_like_pattern(filters.search)}%"
         conditions.append(
             or_(
-                col(LLMAuditLog.id).contains(filters.search),
-                col(LLMAuditLog.model_id).contains(filters.search),
-                col(LLMAuditLog.model_name).like(like_value),
-                col(LLMAuditLog.category).like(like_value),
-                col(LLMAuditLog.operation).like(like_value),
-                col(LLMAuditLog.task_id).like(like_value),
-                col(LLMAuditLog.session_id).like(like_value),
-                col(LLMAuditLog.error_message).like(like_value),
+                col(LLMAuditLog.id).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.model_id).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.model_name).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.category).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.operation).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.task_id).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.session_id).ilike(like_value, escape="\\"),
+                col(LLMAuditLog.error_message).ilike(like_value, escape="\\"),
             )
         )
     return conditions
@@ -246,9 +250,8 @@ async def get_stats(
     filtered = (
         _apply_filters(filtered_query, filters)
         .cte("dashboard_metrics")
-        .prefix_with("MATERIALIZED")
     )
-    date_expression = func.strftime("%Y-%m-%d", filtered.c.created_at)
+    date_expression = func.substr(cast(filtered.c.created_at, String), 1, 10)
     model_id_expression = func.nullif(filtered.c.model_id, "")
     model_key_expression = func.coalesce(model_id_expression, literal("unknown"))
     model_name_expression = func.nullif(filtered.c.model_name, "")
@@ -390,7 +393,9 @@ async def list_records(
     """索引分页及计数在同一 SQL 快照中返回，空页也保留总数。"""
     sort_column = SORT_COLUMNS.get(sort_by, LLMAuditLog.created_at)
     order_expression = (
-        col(sort_column).asc() if sort_order == "asc" else col(sort_column).desc()
+        col(sort_column).asc().nulls_first()
+        if sort_order == "asc"
+        else col(sort_column).desc().nulls_last()
     )
     page_query = select(
         col(LLMAuditLog.id).label("record_id"),

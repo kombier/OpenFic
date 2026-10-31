@@ -76,6 +76,9 @@ from app.agent_runtime.tools.errors import (
 from app.agent_runtime.tool_call_recovery import (
     build_malformed_tool_call_error,
     is_malformed_tool_call,
+    merge_tool_call_chunks,
+    normalize_tool_input_for_schema,
+    reconcile_tool_call_chunks,
     recover_message_tool_calls,
 )
 
@@ -155,6 +158,7 @@ async def _invoke_model(
     start_time = time.perf_counter()
     first_token_ms: int | None = None
     response: AIMessage | None = None
+    streamed_tool_call_chunks: dict[int, dict[str, Any]] = {}
 
     stream = _TimedStream(
         model.astream(messages),
@@ -163,6 +167,10 @@ async def _invoke_model(
     async for chunk in stream:
         if first_token_ms is None:
             first_token_ms = int((time.perf_counter() - start_time) * 1000)
+        merge_tool_call_chunks(
+            streamed_tool_call_chunks,
+            getattr(chunk, "tool_call_chunks", None),
+        )
         response = chunk if response is None else response + chunk
 
     if response is None:
@@ -180,7 +188,13 @@ async def _invoke_model(
         ),
         tool_calls=cast(
             list[dict[str, Any]],
-            _checkpoint_safe_value(recover_message_tool_calls(response)),
+            _checkpoint_safe_value(
+                reconcile_tool_call_chunks(
+                    streamed_tool_call_chunks,
+                    id_seed=response.id,
+                )
+                or recover_message_tool_calls(response)
+            ),
         ),
         usage_metadata=(
             cast(dict[str, Any], _checkpoint_safe_value(response.usage_metadata))
@@ -1007,11 +1021,17 @@ def create_react_agent(
                 if isinstance(runtime_state, Mapping)
                 else None
             )
+            from dataclasses import replace
+            from app.agent_runtime.timeout_settings import load_agent_timeout_settings
+            invoke_settings = load_llm_invoke_settings()
+            if db_session is not None:
+                timeout_settings = await load_agent_timeout_settings(cast("AsyncSession", db_session))
+                invoke_settings = replace(invoke_settings, chunk_timeout=timeout_settings.llm_chunk_timeout)
             response = await invoke_model_with_retry(
                 bound_model or model,
                 messages,
                 invoke=_invoke_model,
-                settings=load_llm_invoke_settings(),
+                settings=invoke_settings,
                 session_id=session_id if isinstance(session_id, str) else None,
                 node=react_config.name,
                 retry_event_sink=_get_retry_event_sink(config),
@@ -1209,6 +1229,15 @@ def create_react_agent(
                         "latency_ms": int((time.perf_counter() - started_at) * 1000),
                 }
             )
+
+        normalized_tool_args = normalize_tool_input_for_schema(
+            tool_args,
+            getattr(tool_instance, "args_schema", None),
+        )
+        if isinstance(normalized_tool_args, dict):
+            tool_args = normalized_tool_args
+            tool_call = dict(tool_call)
+            tool_call["args"] = tool_args
 
         if phase == "prepare" and not getattr(tool_instance, "_pre_hooks", []):
             payload = {"__openfic_prepared": True}

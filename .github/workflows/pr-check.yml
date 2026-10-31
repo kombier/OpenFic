@@ -27,6 +27,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - id: filter
         env:
@@ -36,6 +37,7 @@ jobs:
           backend=false
           frontend=false
           desktop=false
+          mobile=false
 
           while IFS= read -r file; do
             case "$file" in
@@ -55,12 +57,18 @@ jobs:
                 desktop=true
                 ;;
             esac
+            case "$file" in
+              mobile/*|frontend/*|.github/workflows/pr-check.yml|.github/workflows/package.yml|release-please-config.json)
+                mobile=true
+                ;;
+            esac
           done < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')
 
           {
             echo "backend=${backend}"
             echo "frontend=${frontend}"
             echo "desktop=${desktop}"
+            echo "mobile=${mobile}"
           } >> "$GITHUB_OUTPUT"
 
   backend:
@@ -85,21 +93,64 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
-      - name: Install dependencies
+      - name: Install dependencies (including PostgreSQL extra)
         working-directory: backend
-        run: uv sync --frozen
+        run: uv sync --frozen --extra postgresql
       - name: Run lint
         working-directory: backend
-        run: uv run ruff check .
+        run: uv run --no-sync ruff check .
       - name: Run type check
         working-directory: backend
-        run: uv run ty check app
+        run: uv run --no-sync ty check app
       - name: Run tests
         working-directory: backend
-        run: uv run pytest
+        run: uv run --no-sync pytest
       - name: Build package
         working-directory: backend
         run: uv build
+
+  backend-postgresql:
+    name: Backend (PostgreSQL)
+    needs: changes
+    if: "!startsWith(github.event.pull_request.head.ref, 'release-please--') && needs.changes.outputs.backend == 'true'"
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: openfic
+          POSTGRES_PASSWORD: openfic
+          POSTGRES_DB: openfic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openfic -d openfic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      OPENFIC_DATABASE_BACKEND: postgresql
+      OPENFIC_DATABASE_URL: postgresql+psycopg://openfic:openfic@127.0.0.1:5432/openfic
+      OPENFIC_CHECKPOINT_DATABASE_URL: postgresql://openfic:openfic@127.0.0.1:5432/openfic
+      OPENFIC_TEST_DATABASE_URL: postgresql+psycopg://openfic:openfic@127.0.0.1:5432/openfic
+      OPENFIC_TEST_CHECKPOINT_DATABASE_URL: postgresql://openfic:openfic@127.0.0.1:5432/openfic
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install PostgreSQL dependencies
+        working-directory: backend
+        run: uv sync --frozen --extra postgresql
+      - name: Run PostgreSQL backend tests
+        env:
+          OPENFIC_DATA_DIR: ${{ runner.temp }}/openfic-data
+        working-directory: backend
+        run: uv run --extra postgresql pytest
 
   frontend:
     name: Frontend
@@ -165,20 +216,61 @@ jobs:
         working-directory: desktop
         run: pnpm build
 
+  mobile:
+    name: Mobile Android
+    needs: changes
+    if: "!startsWith(github.event.pull_request.head.ref, 'release-please--') && needs.changes.outputs.mobile == 'true'"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK and dependencies
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir mobile install --frozen-lockfile
+      - name: Check mobile sources
+        working-directory: mobile
+        run: |
+          pnpm test
+          pnpm type-check
+          pnpm lint
+          pnpm format:check
+      - name: Build Android assets
+        working-directory: mobile
+        run: pnpm sync
+      - name: Test and build Android
+        working-directory: mobile/android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon
+
   summary:
     name: Summary
     if: "always() && !startsWith(github.event.pull_request.head.ref, 'release-please--')"
-    needs: [changes, backend, frontend, desktop]
+    needs: [changes, backend, backend-postgresql, frontend, desktop, mobile]
     runs-on: ubuntu-latest
     steps:
       - name: Verify checks
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
+          BACKEND_POSTGRESQL_RESULT: ${{ needs.backend-postgresql.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
+          MOBILE_RESULT: ${{ needs.mobile.result }}
         run: |
-          for result in "$CHANGES_RESULT" "$BACKEND_RESULT" "$FRONTEND_RESULT" "$DESKTOP_RESULT"; do
+          for result in "$CHANGES_RESULT" "$BACKEND_RESULT" "$BACKEND_POSTGRESQL_RESULT" "$FRONTEND_RESULT" "$DESKTOP_RESULT" "$MOBILE_RESULT"; do
             if [ "$result" = 'failure' ] || [ "$result" = 'cancelled' ]; then
               exit 1
             fi

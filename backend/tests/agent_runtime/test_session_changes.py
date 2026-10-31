@@ -15,7 +15,14 @@ from app.agent_runtime.persistence.model import (
     AgentChildRunRequest,
     AgentRunMessage,
 )
+from app.agent_runtime.tools.impls.chapter.diff_preview import (
+    ChapterPreviewData,
+    build_chapter_diff_preview,
+)
+from app.storage.models.project import Project
 from app.storage.models.revision import Revision
+from app.storage.models.revision_chapter_snapshot import RevisionChapterSnapshot
+from app.storage.models.task import Task
 
 
 def _message(
@@ -881,6 +888,19 @@ async def test_loads_only_requested_revision_range(
 ):
     session.add_all(
         [
+            Project(id="project-1", title="测试项目"),
+            Task(
+                id="task-1",
+                project_id="project-1",
+                title="测试任务",
+                mode="agent",
+                agent_session_id="parent-session",
+            ),
+        ]
+    )
+    await session.flush()
+    session.add_all(
+        [
             _message(
                 message_id="user-1",
                 session_id="parent-session",
@@ -919,6 +939,12 @@ async def test_loads_only_requested_revision_range(
     )
     await session.flush()
 
+    session.add(RevisionChapterSnapshot(
+        revision_id="revision-1", chapter_id="chapter-1", project_id="project-1",
+        exists=True, title="章节", content="原有正文\n\n",
+    ))
+    await session.flush()
+
     result = await load_agent_session_changes(
         session,
         "parent-session",
@@ -927,6 +953,9 @@ async def test_loads_only_requested_revision_range(
 
     assert [turn.revision_id for turn in result.turns] == ["revision-1"]
     assert [item.key for item in result.session_changes.items] == ["chapter:chapter-1"]
+    assert [line.text for line in result.session_changes.items[0].sections[0].lines] == [
+        "第一轮", "原有正文", ""
+    ]
 
 
 @pytest.mark.asyncio
@@ -983,10 +1012,179 @@ async def test_loads_parent_and_descendant_messages_before_projecting_changes():
     ) as list_messages_batch, patch(
         "app.agent_runtime.session_changes.list_descendant_child_runs",
         side_effect=list_children,
-    ) as list_children_batch:
+    ) as list_children_batch, patch(
+        "app.agent_runtime.session_changes.revision_chapter_snapshot_repo.list_by_revisions",
+        AsyncMock(return_value=[]),
+    ) as list_snapshots:
         result = await load_agent_session_changes(db_session, "parent-session")
 
     assert result.session_changes.item_count == 1
     assert result.turns[0].subagent_runs[0].child_run_id == "child-1"
     assert list_messages_batch.call_count == 1
     list_children_batch.assert_awaited_once_with(db_session, "parent-session")
+    list_snapshots.assert_awaited_once_with(db_session, ["revision-1"])
+
+
+@pytest.mark.parametrize("include_details", [False, True])
+def test_summary_applies_partial_chapter_diffs_to_revision_snapshot(include_details: bool) -> None:
+    original = "乙章原始内容。\n\n乙章原始结尾。\n"
+    steps = [
+        [("removed", 1, "乙章原始内容。"), ("added", 1, "乙章第一次改动后的开头。")],
+        [("removed", 3, "乙章原始结尾。"), ("added", 3, "乙章第五次改动。")],
+        [("removed", 1, "乙章第一次改动后的开头。"), ("added", 1, "乙章整篇重置后的内容。"),
+         ("removed", 3, "乙章第五次改动。"), ("added", 3, "用于验证整段替换。")],
+    ]
+    messages = [_message(message_id="user-1", session_id="parent-session", role="user", seq=0)]
+    for index, step in enumerate(steps, 1):
+        payload = json.loads(_chapter_result("chapter-1", ""))
+        payload["metadata"]["chapter_diff"]["sections"][0]["lines"] = [
+            {"type": kind, "before_line_number": number if kind == "removed" else None,
+             "after_line_number": number if kind == "added" else None, "text": text}
+            for kind, number, text in step
+        ]
+        messages.append(_message(
+            message_id=f"tool-{index}", session_id="parent-session", role="tool", seq=index,
+            content=json.dumps(payload), tool_name="edit_chapter",
+        ))
+    result = build_agent_changes(
+        "parent-session",
+        parent_messages=messages,
+        child_runs=[],
+        child_requests=[],
+        child_messages=[],
+        revisions=[_revision("revision-1", "user-1", 0)],
+        chapter_snapshots=[RevisionChapterSnapshot(
+            revision_id="revision-1", chapter_id="chapter-1", project_id="project-1",
+            exists=True, title="章节", content=original,
+        )],
+        include_details=include_details,
+    )
+    for summary in (result.turns[0].changes, result.session_changes):
+        assert (summary.added, summary.removed) == (2, 2)
+        if include_details:
+            lines = summary.items[0].sections[0].lines
+            assert [(line.after_line_number, line.text) for line in lines if line.type != "removed"] == [
+                (1, "乙章整篇重置后的内容。"), (2, ""), (3, "用于验证整段替换。")
+            ]
+        else:
+            assert summary.items[0].sections == []
+
+
+@pytest.mark.parametrize("rename_after_edit", [False, True])
+@pytest.mark.parametrize("existing_blank_lines", [0, 1, 2])
+def test_chapter_diff_preserves_blank_lines_after_edit_and_rename(
+    existing_blank_lines: int, rename_after_edit: bool
+) -> None:
+    before = ChapterPreviewData(
+        id="chapter-1",
+        project_id="project-1",
+        volume_id="volume-1",
+        title="测试章节乙",
+        content="乙章原始内容。" + ("\n" * (existing_blank_lines + 1) if existing_blank_lines else ""),
+    )
+    blank_lines = max(existing_blank_lines, 1)
+    after = ChapterPreviewData(
+        id=before.id,
+        project_id=before.project_id,
+        volume_id=before.volume_id,
+        title=before.title,
+        content="乙章整篇重置后的内容。" + "\n" * (blank_lines + 1) + "用于验证整段替换。",
+    )
+    diffs = [build_chapter_diff_preview(before, after)]
+    if rename_after_edit:
+        renamed = ChapterPreviewData(
+            id=after.id,
+            project_id=after.project_id,
+            volume_id=after.volume_id,
+            title="测试章节乙改名",
+            content=after.content,
+        )
+        diffs.append(build_chapter_diff_preview(after, renamed))
+    messages = [_message(message_id="user-1", session_id="parent-session", role="user", seq=0)]
+    messages.extend(
+        _message(
+            message_id=f"tool-{index}",
+            session_id="parent-session",
+            role="tool",
+            seq=index,
+            content=json.dumps({"success": True, "metadata": {"chapter_diff": diff}}),
+            tool_name="edit_chapter",
+        )
+        for index, diff in enumerate(diffs, 1)
+    )
+    for include_details in (True, False):
+        result = build_agent_changes(
+            "parent-session",
+            parent_messages=messages,
+            child_runs=[],
+            child_requests=[],
+            child_messages=[],
+            revisions=[_revision("revision-1", "user-1", 0)],
+            include_details=include_details,
+        )
+        for summary in (result.turns[0].changes, result.session_changes):
+            assert (summary.added, summary.removed) == (2 if existing_blank_lines else 3, 1)
+            if not include_details:
+                continue
+            lines = summary.items[0].sections[0].lines
+            after_lines = [line for line in lines if line.type != "removed"]
+            assert [line.text for line in after_lines] == [
+                "乙章整篇重置后的内容。", *([""] * blank_lines), "用于验证整段替换。"
+            ]
+            assert [line.after_line_number for line in after_lines] == list(range(1, blank_lines + 3))
+            assert [line.type for line in after_lines] == [
+                "added", *(["context" if existing_blank_lines else "added"] * blank_lines), "added"
+            ]
+
+
+@pytest.mark.parametrize("rename_before_recreation", [False, True])
+def test_deleted_chapter_recreated_at_same_path_has_one_net_diff(rename_before_recreation):
+    def chapter_diff(chapter_id, title, operation, before, after, *, old_title=None, path="第一卷"):
+        lines = [
+            {"type": "removed", "before_line_number": index, "text": text}
+            for index, text in enumerate(before, 1)
+        ] + [
+            {"type": "added", "after_line_number": index, "text": text}
+            for index, text in enumerate(after, 1)
+        ]
+        sections = [{"type": "content", "lines": lines}] if lines else []
+        if old_title:
+            sections.append({"type": "title", "lines": [
+                {"type": "removed", "text": old_title},
+                {"type": "added", "text": title},
+            ]})
+        return json.dumps({"success": True, "metadata": {"chapter_diff": {
+            "chapter_id": chapter_id, "chapter_title": title, "path": [path],
+            "operation": operation, "sections": sections,
+        }}}, ensure_ascii=False)
+
+    created_title = "临时标题" if rename_before_recreation else "章节"
+    payloads = [
+        chapter_diff("old", "章节", "delete", ["旧内容"], []),
+        chapter_diff("new", created_title, "create", [], ["新内容"]),
+    ]
+    if rename_before_recreation:
+        payloads.append(chapter_diff("new", "章节", "update", [], [], old_title=created_title))
+    else:
+        payloads.append(chapter_diff("new", "新标题", "update", [], [], old_title="章节"))
+    payloads.append(chapter_diff("other", "章节", "create", [], ["另一卷"], path="第二卷"))
+    messages = [_message(message_id="user-1", session_id="parent-session", role="user", seq=0)]
+    messages.extend(
+        _message(message_id=f"tool-{index}", session_id="parent-session", role="tool", seq=index,
+                 content=payload, tool_name="edit_chapter")
+        for index, payload in enumerate(payloads, 1)
+    )
+    kwargs = dict(parent_messages=messages, child_runs=[], child_requests=[], child_messages=[],
+                  revisions=[_revision("revision-1", "user-1", 0)])
+    details = build_agent_changes("parent-session", **kwargs)
+    summary = build_agent_changes("parent-session", **kwargs, include_details=False)
+    for result in (details, summary):
+        for changes in (result.turns[0].changes, result.session_changes):
+            assert changes.item_count == 2
+            item = next(item for item in changes.items if item.path == ["第一卷"])
+            assert item.title == ("章节" if rename_before_recreation else "新标题")
+            assert (item.added, item.removed) == (1, 1)
+    item = details.session_changes.items[0]
+    assert [(line.type, line.text) for line in item.sections[0].lines] == [
+        ("removed", "旧内容"), ("added", "新内容")
+    ]

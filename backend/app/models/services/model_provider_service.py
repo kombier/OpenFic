@@ -8,6 +8,7 @@ Service作为Executor，是唯一发起调用的地方，负责处理重试、�
 import json
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from loguru import logger
@@ -38,6 +39,22 @@ CUSTOM_PROVIDER_TYPES = frozenset(
 )
 
 
+def _model_discovery_url(provider_type: str, base_url: str) -> str:
+    """OpenCode lists models at the shared endpoint, outside protocol routes."""
+    if provider_type not in {"opencode", "opencode-go"}:
+        return base_url
+    url = urlsplit(base_url)
+    if url.hostname != "opencode.ai":
+        return base_url
+    root = "/inference/go" if provider_type == "opencode-go" else "/inference"
+    if url.path.rstrip("/") in {
+        f"{root}/openai/v1", f"{root}/anthropic/v1",
+        f"{root}/google/v1", f"{root}/google/v1beta",
+    }:
+        return urlunsplit(url._replace(path=f"{root}/v1"))
+    return base_url
+
+
 def _get_model_discovery_provider_type(provider_type: str) -> str:
     if (
         provider_type == "anthropic-compatible"
@@ -50,6 +67,8 @@ def _get_model_discovery_provider_type(provider_type: str) -> str:
         return "gemini-compatible"
     if provider_type == OPENAI_CODEX_PROVIDER_TYPE:
         return OPENAI_CODEX_PROVIDER_TYPE
+    if provider_type == "requesty":
+        return "requesty"
     return "openai-compatible"
 
 
@@ -432,6 +451,7 @@ class ModelProviderService:
             Exception: 如果连接验证失败。
         """
         url = await self._resolve_provider_url(provider_type, url)
+        url = _model_discovery_url(provider_type, url)
 
         # 使用统一的Adapter获取模型
         runtime_provider_type = _get_model_discovery_provider_type(provider_type)
@@ -504,6 +524,7 @@ class ModelProviderService:
         # 解密API Key
         api_key = self.encryption_service.decrypt(provider.api_key_encrypted)
         request_headers = self.get_decrypted_custom_headers(provider)
+        discovery_url = _model_discovery_url(provider.provider_type, provider.url)
 
         # 创建HTTP客户端并执行请求
         try:
@@ -513,32 +534,32 @@ class ModelProviderService:
                     if request_headers:
                         models = await adapter.get_llm_models(
                             client,
-                            provider.url,
+                            discovery_url,
                             api_key,
                             headers=request_headers,
                         )
                     else:
-                        models = await adapter.get_llm_models(client, provider.url, api_key)
+                        models = await adapter.get_llm_models(client, discovery_url, api_key)
                 elif task_type == "rerank":
                     if request_headers:
                         models = await adapter.get_rerank_models(
                             client,
-                            provider.url,
+                            discovery_url,
                             api_key,
                             headers=request_headers,
                         )
                     else:
-                        models = await adapter.get_rerank_models(client, provider.url, api_key)
+                        models = await adapter.get_rerank_models(client, discovery_url, api_key)
                 else:
                     if request_headers:
                         models = await adapter.get_embedding_models(
                             client,
-                            provider.url,
+                            discovery_url,
                             api_key,
                             headers=request_headers,
                         )
                     else:
-                        models = await adapter.get_embedding_models(client, provider.url, api_key)
+                        models = await adapter.get_embedding_models(client, discovery_url, api_key)
 
                 logger.info(
                     f"Successfully fetched {len(models)} models for provider={provider.provider_type}, task_type={task_type}"

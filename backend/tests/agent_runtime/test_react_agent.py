@@ -99,6 +99,16 @@ def test_react_state_is_valid_typed_dict():
     assert state["iteration_count"] == 0
 
 
+@pytest.fixture(autouse=True)
+def mock_agent_timeout_settings(monkeypatch):
+    from app.agent_runtime.timeout_settings import parse_agent_timeout_settings
+
+    monkeypatch.setattr(
+        "app.agent_runtime.timeout_settings.load_agent_timeout_settings",
+        AsyncMock(return_value=parse_agent_timeout_settings({})),
+    )
+
+
 @pytest.mark.asyncio
 async def test_invoke_model_normalizes_recoverable_invalid_tool_calls_to_ai_message() -> (
     None
@@ -130,6 +140,101 @@ async def test_invoke_model_normalizes_recoverable_invalid_tool_calls_to_ai_mess
         "content": "updated",
     }
     assert response.invalid_tool_calls == []
+
+
+@pytest.mark.asyncio
+async def test_invoke_model_does_not_concatenate_repeated_tool_names() -> None:
+    class StreamingModel:
+        async def astream(self, _messages):
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "index": 0,
+                        "id": "call-list-characters",
+                        "name": "list_characters",
+                        "args": "",
+                    }
+                ],
+            )
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "index": 0,
+                        "id": None,
+                        "name": "list_characters",
+                        "args": '{"query":"Open',
+                    }
+                ],
+            )
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "index": 0,
+                        "id": None,
+                        "name": "list_characters",
+                        "args": 'Fic"}',
+                    }
+                ],
+            )
+
+    response = await _invoke_model(
+        StreamingModel(), [HumanMessage(content="List characters")]
+    )
+
+    assert response.tool_calls == [
+        {
+            "name": "list_characters",
+            "args": {"query": "OpenFic"},
+            "id": "call-list-characters",
+            "type": "tool_call",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_invoke_model_preserves_normal_incremental_tool_calls() -> None:
+    class StreamingModel:
+        async def astream(self, _messages):
+            yield AIMessageChunk(content="准备调用工具")
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "index": 0,
+                        "id": "call-list-characters",
+                        "name": "list_characters",
+                        "args": '{"query":"Open',
+                    }
+                ],
+            )
+            yield AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "index": 0,
+                        "id": None,
+                        "name": None,
+                        "args": 'Fic"}',
+                    }
+                ],
+            )
+
+    response = await _invoke_model(
+        StreamingModel(), [HumanMessage(content="List characters")]
+    )
+
+    assert response.content == "准备调用工具"
+    assert response.tool_calls == [
+        {
+            "name": "list_characters",
+            "args": {"query": "OpenFic"},
+            "id": "call-list-characters",
+            "type": "tool_call",
+        }
+    ]
 
 
 @pytest.mark.asyncio

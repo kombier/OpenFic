@@ -1,4 +1,4 @@
-import { Box, Flex, IconButton, Text } from "@radix-ui/themes";
+import { Badge, Box, Flex, IconButton, Text } from "@radix-ui/themes";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
@@ -34,6 +34,7 @@ import { ModelsSettings } from "../components/models-settings";
 import { NotificationSettings } from "../components/notification-settings";
 import { PersonalizationSettings } from "../components/personalization-settings";
 import { RulesSettings } from "../components/rules-settings";
+import { SessionSettings } from "../components/session-settings";
 import { SettingsSidebar } from "../components/settings-sidebar";
 import { SkillsSettings } from "../components/skills-settings";
 import { SummarySettings } from "../components/summary-settings";
@@ -47,6 +48,8 @@ import {
   type ModelSettingsTab,
 } from "../lib/settings-route";
 import type { Settings, SettingsUpdateRequest, ThemeMode } from "../lib/settings.types";
+import { AudioSettings } from "./audio-settings";
+import { TunnelsSettings } from "./tunnels-settings";
 
 const MotionBox = motion.create(Box);
 
@@ -77,13 +80,16 @@ interface SettingsContentProps {
 }
 
 const CATEGORY_TITLE_KEY_MAP: Record<SettingsCategory, string> = {
+  audio: "speech.title",
   general: "settings.general",
   personalization: "settings.personalization",
   editor: "settings.editor",
   notifications: "settings.notifications",
   connections: "settings.connections",
+  tunnels: "settings.tunnels",
   models: "settings.models",
   index: "settings.index",
+  session: "settings.session",
   context: "settings.context",
   summary: "settings.summary",
   "agent-tools": "settings.agentTools",
@@ -274,13 +280,16 @@ export function SettingsContent({
   const isSplitPanelCategory =
     activeCategory === "agents" || activeCategory === "skills" || activeCategory === "rules";
   const shouldUseFormPagePadding =
+    activeCategory === "audio" ||
     activeCategory === "general" ||
     activeCategory === "personalization" ||
     activeCategory === "editor" ||
     activeCategory === "notifications" ||
     activeCategory === "connections" ||
+    activeCategory === "tunnels" ||
     activeCategory === "models" ||
     activeCategory === "index" ||
+    activeCategory === "session" ||
     activeCategory === "context" ||
     activeCategory === "summary" ||
     activeCategory === "agent-tools" ||
@@ -301,6 +310,11 @@ export function SettingsContent({
         queryClient.removeQueries({ queryKey });
       };
 
+      if (category === "audio") {
+        removeQuery(["asr-settings"]);
+        removeQuery(["asr-status"]);
+        removeQuery(["asr-preparation"]);
+      }
       if (category === "general") removeQuery(["settings"]);
       if (category === "editor") removeQuery(["settings"]);
       if (category === "notifications") removeQuery(["settings"]);
@@ -457,6 +471,7 @@ export function SettingsContent({
                 isAgentSettingsLockLoading={isAgentSettingsLockLoading}
               />
             ) : null}
+            {activeCategory === "tunnels" ? <TunnelsSettings /> : null}
             {activeCategory === "models" ? (
               <ModelsSettings
                 activeTab={activeModelTab}
@@ -471,6 +486,7 @@ export function SettingsContent({
                 isAgentSettingsLockLoading={isAgentSettingsLockLoading}
               />
             ) : null}
+            {activeCategory === "session" ? <SessionSettings /> : null}
             {activeCategory === "context" ? <ContextSettings /> : null}
             {activeCategory === "summary" ? (
               <SummarySettings
@@ -522,6 +538,7 @@ export function SettingsContent({
                 isAgentSettingsLockLoading={isAgentSettingsLockLoading}
               />
             ) : null}
+            {activeCategory === "audio" ? <AudioSettings /> : null}
             {activeCategory === "advanced" ? <AdvancedSettings /> : null}
           </>
         ) : null}
@@ -639,7 +656,22 @@ export function SettingsContent({
                               >
                                 {Icon}
                               </span>
-                              <Text size="2">{t(category.labelKey)}</Text>
+                              <Flex
+                                align="center"
+                                gap="2"
+                                className="settings-dialog-mobile-category-item-label"
+                              >
+                                <Text size="2">{t(category.labelKey)}</Text>
+                                {category.badgeKey ? (
+                                  <Badge
+                                    size="1"
+                                    variant="soft"
+                                    color="green"
+                                  >
+                                    {t(category.badgeKey)}
+                                  </Badge>
+                                ) : null}
+                              </Flex>
                             </Flex>
                             <ChevronRight
                               size={16}

@@ -1,0 +1,172 @@
+name: Sync AtomGit Release
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: GitHub Release tag to sync
+        required: true
+        type: string
+    secrets:
+      ATOMGIT_TOKEN:
+        required: true
+      OSS_ACCESS_KEY_ID:
+        required: true
+      OSS_ACCESS_KEY_SECRET:
+        required: true
+      OSS_BUCKET:
+        required: true
+      FC_URL:
+        required: true
+      FC_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub Release tag to sync (for example, v0.12.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-atomgit-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          tag="${EVENT_TAG:-${INPUT_TAG:-}}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download GitHub Release assets
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh release download "$TAG" --dir "$RUNNER_TEMP/assets"
+
+      - name: Sync release metadata to AtomGit
+        env:
+          ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
+          ATOMGIT_REPO: Syrize/OpenFic
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          api="https://api.atomgit.com/api/v5/repos/${ATOMGIT_REPO}/releases"
+
+          release_json=$(gh release view "$TAG" --json name,body)
+          release_name=$(jq -r '.name' <<< "$release_json")
+          release_body=$(jq -r '.body' <<< "$release_json")
+
+          release_status=$(curl -sS --connect-timeout 30 --max-time 60 \
+            -H "Authorization: Bearer ${ATOMGIT_TOKEN}" \
+            -o "$RUNNER_TEMP/atomgit-release.json" -w '%{http_code}' "${api}/${TAG}")
+          if [[ "$release_status" == 200 ]]; then
+            echo "AtomGit Release $TAG already exists"
+          elif [[ "$release_status" == 404 ]]; then
+            jq -n --arg tag "$TAG" --arg name "$release_name" --arg body "$release_body" \
+              '{tag_name: $tag, name: $name, body: $body, release_status: "latest"}' \
+              > "$RUNNER_TEMP/release.json"
+            curl --fail-with-body -sS --connect-timeout 30 --max-time 60 -X POST \
+              -H "Authorization: Bearer ${ATOMGIT_TOKEN}" -H 'Content-Type: application/json' \
+              -d @"$RUNNER_TEMP/release.json" \
+              "$api" > /dev/null
+            echo "Created AtomGit Release $TAG"
+          else
+            echo "AtomGit Release lookup failed with HTTP $release_status" >&2
+            exit 1
+          fi
+
+          echo "AtomGit Release sync completed for $TAG"
+
+      - name: Install ossutil
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sSL --connect-timeout 30 --max-time 120 \
+            "https://gosspublic.alicdn.com/ossutil/v2/2.2.0/ossutil-2.2.0-linux-amd64.zip" \
+            -o "$RUNNER_TEMP/ossutil.zip"
+          unzip -o "$RUNNER_TEMP/ossutil.zip" -d "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/ossutil-2.2.0-linux-amd64/ossutil" "$RUNNER_TEMP/ossutil"
+          chmod +x "$RUNNER_TEMP/ossutil"
+          "$RUNNER_TEMP/ossutil" version
+
+      - name: Upload assets to OSS
+        id: oss
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          OSS_REGION: cn-shanghai
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ossutil="$RUNNER_TEMP/ossutil"
+          prefix="openfic-releases/${TAG}"
+
+          shopt -s nullglob
+          assets=("$RUNNER_TEMP"/assets/*)
+          if ((${#assets[@]} == 0)); then
+            echo "GitHub Release $TAG has no assets" >&2
+            exit 1
+          fi
+
+          manifest="$RUNNER_TEMP/manifest.json"
+          echo '{"tag": "", "assets": []}' > "$manifest"
+          # 顺序无关：AtomGit 上传顺序由 FC 侧统一排序
+          for file in "${assets[@]}"; do
+            file_name=$(basename "$file")
+            object_key="${prefix}/${file_name}"
+            local_crc=$("$ossutil" hash crc64 "$file" --quiet)
+            local_crc="${local_crc%% *}"
+            local_size=$(stat --printf='%s' "$file")
+            remote_crc="" remote_size=""
+            if object_meta=$("$ossutil" api head-object --bucket "$OSS_BUCKET" \
+              --key "$object_key" --output-format json --quiet); then
+              remote_crc=$(jq -r '.Header["X-Oss-Hash-Crc64ecma"][0] // empty' <<< "$object_meta")
+              remote_size=$(jq -r '.Header["Content-Length"][0] // empty' <<< "$object_meta")
+            else
+              echo "Unable to read OSS metadata for $file_name; uploading" >&2
+            fi
+            if [[ "$local_crc" =~ ^[0-9]+$ && "$local_crc" == "$remote_crc" && "$local_size" == "$remote_size" ]]; then
+              echo "Skipping unchanged OSS object: $file_name"
+            else
+              "$ossutil" cp -f "$file" "oss://${OSS_BUCKET}/${object_key}"
+            fi
+            jq --arg tag "$TAG" --arg key "$object_key" --arg name "$file_name" \
+              '.tag = $tag | .assets += [{key: $key, file_name: $name}]' \
+              "$manifest" > "$manifest.tmp" && mv "$manifest.tmp" "$manifest"
+          done
+
+          cat "$manifest"
+          echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger FC asset sync to AtomGit
+        env:
+          FC_URL: ${{ secrets.FC_URL }}
+          FC_TOKEN: ${{ secrets.FC_TOKEN }}
+          MANIFEST: ${{ steps.oss.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body -sS --connect-timeout 30 --max-time 7200 -X POST \
+            -H "Authorization: Bearer ${FC_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            -d @"$MANIFEST" \
+            "$FC_URL"

@@ -33,6 +33,7 @@ from app.agent_runtime.tools.hooks.dispatch_description import (
     build_dispatch_subagent_description_hook,
 )
 from app.agent_runtime.tools.hooks.note_refresh import note_refresh_post_hook
+from app.agent_runtime.tools.hooks.skill_refresh import skill_refresh_post_hook
 from app.agent_runtime.tools.hooks.world_entry_refresh import world_entry_refresh_post_hook
 from app.agent_runtime.types import ReactAgentConfig, TerminationCondition
 from app.models.clients.model_factory import ModelConfig, create_chat_model
@@ -41,6 +42,7 @@ DEFAULT_PRIMARY_TOOL_CATEGORIES = (
     "orchestration",
     "interaction",
     "plan",
+    "skill_management",
     "file_read",
     "chapter_read",
     "summary_read",
@@ -152,6 +154,11 @@ async def primary_node(
         raise ValueError("Agent 运行时模型配置不可用")
     client_model_config = to_client_model_config(runtime_model_config)
     client_model_config["session_id"] = state.get("session_id")
+    db_session = configurable.get("db_session")
+    if db_session is not None:
+        from dataclasses import asdict
+        from app.agent_runtime.timeout_settings import load_agent_timeout_settings
+        client_model_config.update(asdict(await load_agent_timeout_settings(db_session)))
     model_config = ModelConfig(**client_model_config)
     model = create_chat_model(model_config)
     agent_key = state.get("agent_key", "build")
@@ -179,6 +186,7 @@ async def primary_node(
                 post_hooks=[
                     chapter_refresh_post_hook,
                     note_refresh_post_hook,
+                    skill_refresh_post_hook,
                     world_entry_refresh_post_hook,
                     character_refresh_post_hook,
                 ],

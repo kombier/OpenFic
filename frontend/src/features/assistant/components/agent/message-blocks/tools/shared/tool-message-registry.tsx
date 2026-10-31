@@ -35,7 +35,7 @@ import i18n from "@/i18n";
 import type { AgentMessage } from "@/lib/agent.types";
 
 import { AskUserToolMessage } from "../ask-user/ask-user-tool-message";
-import { ChapterToolMessage } from "../chapter/chapter-tool-message";
+import { ChapterDiffCard, ChapterToolMessage } from "../chapter/chapter-tool-message";
 import {
   CharacterRelationshipToolMessage,
   CharacterToolMessage,
@@ -68,6 +68,7 @@ import {
   type ToolContentMode,
   type ToolGroup,
 } from "./tool-message-catalog";
+import { ToolBody, ToolTextBlock } from "./tool-message-shared";
 import {
   asString,
   formatCategoryRefLabel,
@@ -89,6 +90,8 @@ import {
   getRangeSummaryList,
   getReadChapterDetail,
   getReadFileDetail,
+  getSkillDiffCards,
+  getSkillDisplayName,
   getStreamingData,
   getSubagentList,
   getToolRef,
@@ -124,6 +127,51 @@ function getVolumeRefLabel(message: AgentMessage, key: string): string | undefin
 
 function getSkillArg(message: AgentMessage, key: string): string | undefined {
   return asString(getStreamingData(message)[key]) ?? undefined;
+}
+
+function SkillManagementToolMessage({ message }: { message: AgentMessage }) {
+  const cards = getSkillDiffCards(message);
+  if (cards) {
+    return (
+      <ToolBody>
+        {cards.map((card, index) => (
+          <ChapterDiffCard
+            key={`${index}-${card.title}`}
+            title={card.title ?? i18n.t("assistant.tools.skill")}
+            section={card.section}
+          />
+        ))}
+      </ToolBody>
+    );
+  }
+  return (
+    <ToolBody>
+      <ToolTextBlock
+        label={i18n.t("assistant.tools.skill")}
+        value={getSkillArg(message, "skill_id")}
+      />
+      <ToolTextBlock
+        label={i18n.t("assistant.tools.skillName")}
+        value={getSkillArg(message, "name")}
+      />
+      <ToolTextBlock
+        label={i18n.t("assistant.tools.skillReferenceTitle")}
+        value={getSkillArg(message, "title")}
+      />
+      <ToolTextBlock
+        label={i18n.t("assistant.tools.skillReferenceId")}
+        value={getSkillArg(message, "doc_id")}
+      />
+      <ToolTextBlock
+        label={i18n.t("assistant.tools.skillSummary")}
+        value={getSkillArg(message, "summary")}
+      />
+      <ToolTextBlock
+        label={i18n.t("assistant.tools.content")}
+        value={getSkillArg(message, "content")}
+      />
+    </ToolBody>
+  );
 }
 
 function getRelationshipDetail(message: AgentMessage): string | undefined {
@@ -825,6 +873,101 @@ const TOOL_REGISTRY = {
       if (skillName && refName) return `${skillName}/${refName}`;
       return skillName ?? refName;
     },
+  },
+  list_skills: {
+    toolName: "list_skills",
+    group: "skill",
+    tag: "list",
+    isExplore: true,
+    contentMode: "hidden",
+    icon: ListOrdered,
+    getTitle: () => i18n.t("assistant.tools.listSkills"),
+  },
+  get_skill: {
+    toolName: "get_skill",
+    group: "skill",
+    tag: "get",
+    isExplore: true,
+    contentMode: "hidden",
+    icon: Sparkles,
+    getTitle: () => i18n.t("assistant.tools.getSkill"),
+    getDetail: getSkillDisplayName,
+  },
+  get_skill_reference_doc: {
+    toolName: "get_skill_reference_doc",
+    group: "skill",
+    tag: "get-reference",
+    isExplore: true,
+    contentMode: "hidden",
+    icon: BookMarked,
+    getTitle: () => i18n.t("assistant.tools.getSkillReferenceDoc"),
+    getDetail: getSkillDisplayName,
+  },
+  create_skill: {
+    toolName: "create_skill",
+    group: "skill",
+    tag: "create",
+    isExplore: false,
+    contentMode: "expandable",
+    icon: Sparkles,
+    getTitle: () => i18n.t("assistant.tools.createSkill"),
+    getDetail: getSkillDisplayName,
+    render: (message) => <SkillManagementToolMessage message={message} />,
+  },
+  edit_skill: {
+    toolName: "edit_skill",
+    group: "skill",
+    tag: "edit",
+    isExplore: false,
+    contentMode: "expandable",
+    icon: PenLine,
+    getTitle: () => i18n.t("assistant.tools.editSkill"),
+    getDetail: getSkillDisplayName,
+    render: (message) => <SkillManagementToolMessage message={message} />,
+  },
+  create_skill_reference_doc: {
+    toolName: "create_skill_reference_doc",
+    group: "skill",
+    tag: "create-reference",
+    isExplore: false,
+    contentMode: "expandable",
+    icon: BookMarked,
+    getTitle: () => i18n.t("assistant.tools.createSkillReferenceDoc"),
+    getDetail: getSkillDisplayName,
+    render: (message) => <SkillManagementToolMessage message={message} />,
+  },
+  edit_skill_reference_doc: {
+    toolName: "edit_skill_reference_doc",
+    group: "skill",
+    tag: "edit-reference",
+    isExplore: false,
+    contentMode: "expandable",
+    icon: FilePenLine,
+    getTitle: () => i18n.t("assistant.tools.editSkillReferenceDoc"),
+    getDetail: getSkillDisplayName,
+    render: (message) => <SkillManagementToolMessage message={message} />,
+  },
+  delete_skill: {
+    toolName: "delete_skill",
+    group: "skill",
+    tag: "delete",
+    isExplore: false,
+    contentMode: "expandable",
+    icon: Trash2,
+    getTitle: () => i18n.t("assistant.tools.deleteSkill"),
+    getDetail: getSkillDisplayName,
+    render: (message) => <SkillManagementToolMessage message={message} />,
+  },
+  delete_skill_reference_doc: {
+    toolName: "delete_skill_reference_doc",
+    group: "skill",
+    tag: "delete-reference",
+    isExplore: false,
+    contentMode: "expandable",
+    icon: Trash2,
+    getTitle: () => i18n.t("assistant.tools.deleteSkillReferenceDoc"),
+    getDetail: getSkillDisplayName,
+    render: (message) => <SkillManagementToolMessage message={message} />,
   },
 } satisfies Record<RegisteredToolName, ToolDescriptor>;
 
