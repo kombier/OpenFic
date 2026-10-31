@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +24,9 @@ const untrackedInputs = git(["ls-files", "--others", "--exclude-standard", "--",
 if (untrackedInputs.length) throw new Error(`存在未提交的构建输入：${untrackedInputs.join(", ")}`);
 const sourceCommit = git(["rev-parse", "HEAD"]);
 const version = JSON.parse(readFileSync(path.join(desktop, "package.json"), "utf8")).version;
+const buildId = randomUUID();
+process.env.OPENFIC_CUSTOM_BUILD_ID = buildId;
+writeFileSync(path.join(repository, "backend", "app", "_custom_build.json"), `${JSON.stringify({ version, sourceCommit, buildId })}\n`);
 const output = mkdtempSync(path.join(tmpdir(), "openfic-custom-wheel-"));
 run("uv", ["build", "--wheel", "--out-dir", output], path.join(repository, "backend"));
 const wheels = readdirSync(output).filter((name) => name.endsWith(".whl"));
@@ -34,7 +37,7 @@ const directory = path.join(desktop, "resources", "custom-backend");
 mkdirSync(directory, { recursive: true });
 copyFileSync(path.join(output, wheels[0]), path.join(directory, wheels[0]));
 const sha256 = createHash("sha256").update(readFileSync(path.join(directory, wheels[0]))).digest("hex");
-writeFileSync(path.join(directory, "manifest.json"), `${JSON.stringify({ version, sourceCommit, upstreamTag: git(["describe", "--tags", "--match", "v*", "--abbrev=0"]), wheel: wheels[0], sha256 }, null, 2)}\n`);
+writeFileSync(path.join(directory, "manifest.json"), `${JSON.stringify({ version, sourceCommit, buildId, upstreamTag: git(["describe", "--tags", "--match", "v*", "--abbrev=0"]), wheel: wheels[0], sha256 }, null, 2)}\n`);
 run("pnpm", ["build:setup"]);
 run("pnpm", ["build:main"]);
 run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml", "--mac", "--arm64", "--dir", "--publish", "never"]);

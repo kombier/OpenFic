@@ -22,16 +22,16 @@ export function createOpenFicInstallCommand(
   wheelPath?: string,
 ): Omit<SpawnCommand, "command"> {
   return {
-    args: ["pip", "install", "--python", venvPythonPath, ...(forceReinstall ? ["--reinstall"] : []), wheelPath ?? `openfic==${version}`],
+    args: ["pip", "install", "--python", venvPythonPath, ...(forceReinstall ? ["--reinstall-package", "openfic"] : []), wheelPath ?? `openfic==${version}`],
   };
 }
 
-export function createOpenFicWheelDigestCommand(venvPythonPath: string): SpawnCommand {
+export function createOpenFicBuildIdentityCommand(venvPythonPath: string): SpawnCommand {
   return {
     command: venvPythonPath,
     args: [
       "-c",
-      'import json; from importlib.metadata import distribution; d=json.loads(distribution("openfic").read_text("direct_url.json") or "{}"); a=d.get("archive_info", {}); print(a.get("hashes", {}).get("sha256") or a.get("hash", "").removeprefix("sha256="))',
+      'import json; from importlib.metadata import distribution; print(json.loads(distribution("openfic").locate_file("app/_custom_build.json").read_text())["buildId"])',
     ],
   };
 }

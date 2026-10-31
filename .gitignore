@@ -33,3 +33,4 @@ desktop/dist
 desktop/dist-electron
 desktop/out
 desktop/resources/custom-backend/
+backend/app/_custom_build.json

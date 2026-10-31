@@ -15,7 +15,7 @@ import {
   createOpenFicInstallCommand,
   createOpenFicServeCommand,
   createOpenFicVersionCommand,
-  createOpenFicWheelDigestCommand,
+  createOpenFicBuildIdentityCommand,
   resolveOpenFicCliPath,
 } from "./openfic-commands.js";
 import type { StartupProgressTracker, ProgressUpdate } from "../startup-progress.js";
@@ -329,8 +329,8 @@ export async function inspectOpenFicRuntime(
     };
   }
   const openFicCliPath = resolveOpenFicCliPath(venvPythonPath);
-  const digestCommand = createOpenFicWheelDigestCommand(venvPythonPath);
-  if ((await readOutput(digestCommand.command, digestCommand.args, runtimeDir)) !== bundled.sha256) {
+  const identityCommand = createOpenFicBuildIdentityCommand(venvPythonPath);
+  if ((await readOutput(identityCommand.command, identityCommand.args, runtimeDir)) !== bundled.buildId) {
     return { complete: false, message: "定制后端与当前 App 构建不匹配" };
   }
   if (!(await pathExists(openFicCliPath)) || !(await succeeds(openFicCliPath, ["--help"], runtimeDir))) {
@@ -391,9 +391,9 @@ export async function ensureOpenFicRuntime(
   const openFicCliPath = resolveOpenFicCliPath(venvPythonPath);
   const openFicCliIsUsable =
     (await pathExists(openFicCliPath)) && (await succeeds(openFicCliPath, ["--help"], runtimeDir));
-  const digestCommand = createOpenFicWheelDigestCommand(venvPythonPath);
-  const installedDigest = await readOutput(digestCommand.command, digestCommand.args, runtimeDir);
-  if (installedVersion !== expectedVersion || !openFicCliIsUsable || installedDigest !== bundled.sha256) {
+  const identityCommand = createOpenFicBuildIdentityCommand(venvPythonPath);
+  const installedIdentity = await readOutput(identityCommand.command, identityCommand.args, runtimeDir);
+  if (installedVersion !== expectedVersion || !openFicCliIsUsable || installedIdentity !== bundled.buildId) {
     appendLog(
       "runtime",
       installedVersion ? `OpenFic 后端需要更新：${installedVersion} -> ${expectedVersion}` : "OpenFic 后端尚未安装",
@@ -409,7 +409,7 @@ export async function ensureOpenFicRuntime(
     await runInstallWithIndexFallback(packageIndexEnvironments, (environment) =>
       runUvInstallWithSystemCertsRetry(uvPath, installCommand.args, runtimeDir, onProgress, environment),
     );
-    if ((await readOutput(digestCommand.command, digestCommand.args, runtimeDir)) !== bundled.sha256) {
+    if ((await readOutput(identityCommand.command, identityCommand.args, runtimeDir)) !== bundled.buildId) {
       throw new Error("安装后的定制后端身份不匹配，拒绝启动");
     }
   }

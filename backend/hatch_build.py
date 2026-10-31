@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -52,6 +53,12 @@ class CustomBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: dict[str, object]) -> None:
         super().initialize(version, build_data)
         backend_dir = Path(self.root)
+        custom_build_id = os.environ.get("OPENFIC_CUSTOM_BUILD_ID")
+        if custom_build_id:
+            marker = backend_dir / "app" / "_custom_build.json"
+            if json.loads(marker.read_text())["buildId"] != custom_build_id:
+                raise RuntimeError("Custom backend build identity mismatch")
+            build_data.setdefault("force_include", {})[str(marker)] = "app/_custom_build.json"
         target_dir = backend_dir / "frontend"
         if version == "editable":
             target_dir.mkdir(parents=True, exist_ok=True)
