@@ -38,4 +38,7 @@ writeFileSync(path.join(directory, "manifest.json"), `${JSON.stringify({ version
 run("pnpm", ["build:setup"]);
 run("pnpm", ["build:main"]);
 run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml", "--mac", "--arm64", "--dir", "--publish", "never"]);
+const application = path.join(desktop, "dist-electron", "mac-arm64", "OpenFic.app");
+run("codesign", ["--force", "--deep", "--sign", "-", application]);
+run("codesign", ["--verify", "--deep", application]);
 console.log(`Custom OpenFic ${version} built from ${sourceCommit}`);
