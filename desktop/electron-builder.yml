@@ -20,6 +20,8 @@ files:
   - package.json
 
 extraResources:
+  - from: resources/custom-backend
+    to: custom-backend
   - from: ../frontend/dist
     to: frontend-dist
     filter:

@@ -19,15 +19,26 @@ export function createOpenFicInstallCommand(
   venvPythonPath: string,
   version: string,
   forceReinstall = false,
+  wheelPath?: string,
 ): Omit<SpawnCommand, "command"> {
   return {
-    args: ["pip", "install", "--python", venvPythonPath, ...(forceReinstall ? ["--reinstall"] : []), `openfic==${version}`],
+    args: ["pip", "install", "--python", venvPythonPath, ...(forceReinstall ? ["--reinstall"] : []), wheelPath ?? `openfic==${version}`],
+  };
+}
+
+export function createOpenFicWheelDigestCommand(venvPythonPath: string): SpawnCommand {
+  return {
+    command: venvPythonPath,
+    args: [
+      "-c",
+      'import json; from importlib.metadata import distribution; d=json.loads(distribution("openfic").read_text("direct_url.json") or "{}"); a=d.get("archive_info", {}); print(a.get("hashes", {}).get("sha256") or a.get("hash", "").removeprefix("sha256="))',
+    ],
   };
 }
 
 export function createOpenFicServeCommand(venvPythonPath: string, port: number): SpawnCommand {
   return {
     command: resolveOpenFicCliPath(venvPythonPath),
-    args: ["serve", "--host", "127.0.0.1", "--port", String(port)],
+    args: ["serve", "--host", "0.0.0.0", "--port", String(port)],
   };
 }

@@ -177,3 +177,16 @@
     padding: 32px 20px !important;
   }
 }
+
+/* Let desktop panels shrink below the intrinsic width of their contents. */
+.writing-page-group {
+  overflow: hidden;
+}
+.writing-page-group > div,
+.writing-page-sidebar,
+.writing-page-editor-shell {
+  min-width: 0 !important;
+}
+.writing-page-sidebar > * {
+  max-width: 100%;
+}

@@ -774,9 +774,10 @@ export function WorldInfoPage() {
               <Panel
                 id="left-sidebar"
                 defaultSize={300}
-                minSize={250}
-                maxSize={400}
-                collapsible={false}
+                minSize={0}
+                maxSize={4000}
+                collapsible={true}
+                collapsedSize={0}
               >
                 <Box className="world-info-page-sidebar world-info-page-sidebar--left">
                   {sidebarContent}
@@ -787,7 +788,7 @@ export function WorldInfoPage() {
 
               <Panel
                 id="editor"
-                minSize={30}
+                minSize={1}
               >
                 <Box
                   data-scroll-container
@@ -802,9 +803,10 @@ export function WorldInfoPage() {
               <Panel
                 id="right-sidebar"
                 defaultSize={500}
-                minSize={300}
-                maxSize={600}
-                collapsible={false}
+                minSize={0}
+                maxSize={4000}
+                collapsible={true}
+                collapsedSize={0}
               >
                 <Box className="world-info-page-sidebar world-info-page-sidebar--right">
                   {agentSidebarContent}

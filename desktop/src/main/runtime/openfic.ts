@@ -15,10 +15,12 @@ import {
   createOpenFicInstallCommand,
   createOpenFicServeCommand,
   createOpenFicVersionCommand,
+  createOpenFicWheelDigestCommand,
   resolveOpenFicCliPath,
 } from "./openfic-commands.js";
 import type { StartupProgressTracker, ProgressUpdate } from "../startup-progress.js";
 import { appendLog, createLogStream } from "../logging.js";
+import { getBundledBackend } from "./bundled-backend.js";
 
 export type OpenFicRuntimeStep = "create-venv" | "install-uv" | "install-openfic";
 
@@ -304,6 +306,7 @@ export async function inspectOpenFicRuntime(
   runtimeDir: string,
   expectedVersion: string,
 ): Promise<RuntimeIntegrityCheck> {
+  const bundled = await getBundledBackend(expectedVersion);
   const venvPythonPath = getVenvPythonPath(runtimeDir);
   if (!(await pathExists(venvPythonPath))) {
     return { complete: false, message: "未找到 Python 虚拟环境" };
@@ -326,6 +329,10 @@ export async function inspectOpenFicRuntime(
     };
   }
   const openFicCliPath = resolveOpenFicCliPath(venvPythonPath);
+  const digestCommand = createOpenFicWheelDigestCommand(venvPythonPath);
+  if ((await readOutput(digestCommand.command, digestCommand.args, runtimeDir)) !== bundled.sha256) {
+    return { complete: false, message: "定制后端与当前 App 构建不匹配" };
+  }
   if (!(await pathExists(openFicCliPath)) || !(await succeeds(openFicCliPath, ["--help"], runtimeDir))) {
     return { complete: false, message: "OpenFic 命令行程序缺失或不可用" };
   }
@@ -339,6 +346,7 @@ export async function ensureOpenFicRuntime(
   expectedVersion: string,
   onProgress: (step: OpenFicRuntimeStep, message: string) => void,
 ): Promise<{ uvPath: string; venvPythonPath: string }> {
+  const bundled = await getBundledBackend(expectedVersion);
   const venvDir = getVenvDir(runtimeDir);
   const venvPythonPath = getVenvPythonPath(runtimeDir);
   const uvPath = getUvPath(runtimeDir);
@@ -383,7 +391,9 @@ export async function ensureOpenFicRuntime(
   const openFicCliPath = resolveOpenFicCliPath(venvPythonPath);
   const openFicCliIsUsable =
     (await pathExists(openFicCliPath)) && (await succeeds(openFicCliPath, ["--help"], runtimeDir));
-  if (installedVersion !== expectedVersion || !openFicCliIsUsable) {
+  const digestCommand = createOpenFicWheelDigestCommand(venvPythonPath);
+  const installedDigest = await readOutput(digestCommand.command, digestCommand.args, runtimeDir);
+  if (installedVersion !== expectedVersion || !openFicCliIsUsable || installedDigest !== bundled.sha256) {
     appendLog(
       "runtime",
       installedVersion ? `OpenFic 后端需要更新：${installedVersion} -> ${expectedVersion}` : "OpenFic 后端尚未安装",
@@ -393,11 +403,15 @@ export async function ensureOpenFicRuntime(
     const installCommand = createOpenFicInstallCommand(
       venvPythonPath,
       expectedVersion,
-      installedVersion === expectedVersion && !openFicCliIsUsable,
+      installedVersion === expectedVersion,
+      bundled.wheelPath,
     );
     await runInstallWithIndexFallback(packageIndexEnvironments, (environment) =>
       runUvInstallWithSystemCertsRetry(uvPath, installCommand.args, runtimeDir, onProgress, environment),
     );
+    if ((await readOutput(digestCommand.command, digestCommand.args, runtimeDir)) !== bundled.sha256) {
+      throw new Error("安装后的定制后端身份不匹配，拒绝启动");
+    }
   }
 
   appendLog("runtime", "OpenFic 运行环境检查完成");

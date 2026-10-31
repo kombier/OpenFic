@@ -363,7 +363,8 @@ export function PromptChainsPage() {
               defaultSize={300}
               minSize={250}
               maxSize={420}
-              collapsible={false}
+              collapsible={true}
+              collapsedSize={0}
             >
               <Box className="prompt-chains-page-panel-shell prompt-chains-page-panel-shell--left">
                 {sidebarContent}

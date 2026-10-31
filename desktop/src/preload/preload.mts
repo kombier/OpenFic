@@ -38,7 +38,6 @@ import { getFrontendHostPreloadPath } from "./frontend-host-preload-path.mjs";
 
 const MIN_ZOOM_FACTOR = 0.7;
 const MAX_ZOOM_FACTOR = 2.0;
-const ZOOM_STEP = 0.1;
 
 function clampZoomFactor(zoomFactor: number): number {
   return Math.round(Math.min(MAX_ZOOM_FACTOR, Math.max(MIN_ZOOM_FACTOR, zoomFactor)) * 10) / 10;
@@ -52,7 +51,7 @@ function applyZoomFactor(zoomFactor: number, shouldSave: boolean): void {
   }
 }
 
-function enableCtrlWheelZoom(): void {
+function restoreSavedZoom(): void {
   void ipcRenderer.invoke(IpcChannels.getZoomFactor).then((zoomFactor: unknown) => {
     if (typeof zoomFactor !== "number" || !Number.isFinite(zoomFactor)) return;
     applyZoomFactor(zoomFactor, false);
@@ -62,13 +61,13 @@ function enableCtrlWheelZoom(): void {
     (event) => {
       if (!event.ctrlKey || event.deltaY === 0) return;
       event.preventDefault();
-      applyZoomFactor(webFrame.getZoomFactor() + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), true);
+      // Block gesture zoom without changing menu zoom or its saved value.
     },
     { capture: true, passive: false },
   );
 }
 
-enableCtrlWheelZoom();
+restoreSavedZoom();
 
 ipcRenderer.on(IpcChannels.zoomFactorChanged, (_event, zoomFactor: unknown) => {
   if (typeof zoomFactor !== "number" || !Number.isFinite(zoomFactor)) return;

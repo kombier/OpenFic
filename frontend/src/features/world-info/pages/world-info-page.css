@@ -137,3 +137,12 @@
   width: 4px;
   background: var(--accent-a5);
 }
+
+.world-info-page-group > div,
+.world-info-page-sidebar,
+.world-info-page-editor-shell {
+  min-width: 0 !important;
+}
+.world-info-page-sidebar > * {
+  max-width: 100%;
+}

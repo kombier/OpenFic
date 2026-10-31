@@ -445,3 +445,7 @@
   background: var(--gray-a3);
   overflow: hidden;
 }
+
+.characters-page-body > div {
+  min-width: 0 !important;
+}

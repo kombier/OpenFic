@@ -144,6 +144,8 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: "#ffffff",
     titleBarStyle: "hidden",
+    fullscreen: true,
+    autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
       sandbox: false,
@@ -178,7 +180,7 @@ export function createMainWindow(): BrowserWindow {
       clearTimeout(showTimer);
       showTimer = null;
     }
-    if (layout.isMaximized) window.maximize();
+    if (layout.isMaximized && !window.isFullScreen()) window.maximize();
     window.show();
   };
 

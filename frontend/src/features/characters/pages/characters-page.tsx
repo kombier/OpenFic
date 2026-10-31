@@ -473,7 +473,8 @@ export function CharactersPage() {
             defaultSize={300}
             minSize={250}
             maxSize={400}
-            collapsible={false}
+            collapsible={true}
+            collapsedSize={0}
           >
             <Box className="characters-panel characters-page-list-panel">{list}</Box>
           </Panel>
@@ -494,7 +495,8 @@ export function CharactersPage() {
             defaultSize={500}
             minSize={300}
             maxSize={600}
-            collapsible={false}
+            collapsible={true}
+            collapsedSize={0}
           >
             <Box className="characters-panel">
               <AssistantSidebarHost

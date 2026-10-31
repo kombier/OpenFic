@@ -77,7 +77,7 @@ export function startBackendProcess(options: StartBackendOptions): BackendProces
     cwd: dataDir,
     env: {
       ...process.env,
-      OPENFIC_SERVER_HOST: "127.0.0.1",
+      OPENFIC_SERVER_HOST: "0.0.0.0",
       OPENFIC_SERVER_PORT: String(options.port),
       OPENFIC_DATA_DIR: dataDir,
       OPENFIC_SHUTDOWN_TOKEN: shutdownToken,

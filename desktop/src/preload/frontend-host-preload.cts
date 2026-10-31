@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer, webFrame } = require("electron") as typeof i
 
 const MIN_ZOOM_FACTOR = 0.7;
 const MAX_ZOOM_FACTOR = 2.0;
-const ZOOM_STEP = 0.1;
 
 function clampZoomFactor(zoomFactor: number): number {
   return Math.round(Math.min(MAX_ZOOM_FACTOR, Math.max(MIN_ZOOM_FACTOR, zoomFactor)) * 10) / 10;
@@ -39,9 +38,7 @@ window.addEventListener(
   (event) => {
     if (!event.ctrlKey || event.deltaY === 0) return;
     event.preventDefault();
-    const zoomFactor = clampZoomFactor(webFrame.getZoomFactor() + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
-    webFrame.setZoomFactor(zoomFactor);
-    ipcRenderer.sendToHost("openfic:zoom-factor", zoomFactor);
+    // Disable trackpad pinch/ctrl+wheel; menu zoom remains available through IPC.
   },
   { capture: true, passive: false },
 );

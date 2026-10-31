@@ -146,3 +146,10 @@
   background: rgba(15, 23, 42, 0.16);
   pointer-events: auto;
 }
+
+.prompt-chains-page-group {
+  overflow: hidden;
+}
+.prompt-chains-page-group > div {
+  min-width: 0 !important;
+}

@@ -1,5 +1,6 @@
 import { app, dialog, Menu, type BrowserWindow } from "electron";
 import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { registerAppScheme, handleAppProtocol, setRuntimeConfig } from "./protocol.js";
 import { getDevDataDir, isDevMode, DEV_INSTANCE_ID, startDevBackend } from "./runtime/dev-backend.js";
 import { createMainWindow } from "./windows.js";
@@ -18,6 +19,13 @@ import { appendLog, setLogsDir } from "./logging.js";
 import { captureException, captureExceptionImmediate, startErrorTelemetry, syncTelemetryEnabled } from "./telemetry.js";
 import type { InitializeAppResult } from "../shared/ipc.js";
 import type { DesktopConfig, DesktopInstance } from "../shared/config.js";
+
+// Give packaged acceptance runs their own config, logs and runtime as well as data.
+const customUserData = process.env.OPENFIC_CUSTOM_USER_DATA_DIR;
+if (customUserData) {
+  if (!path.isAbsolute(customUserData)) throw new Error("OPENFIC_CUSTOM_USER_DATA_DIR 必须是绝对路径");
+  app.setPath("userData", customUserData);
+}
 
 function writeStartupLog(message: string): void {
   appendLog("startup", message);

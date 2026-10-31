@@ -194,20 +194,8 @@ export const useTabsStore = create<TabsStore>()((set, get) => ({
     const newTabs = tabs.filter((t) => t.id !== tabId);
 
     if (newTabs.length === 0) {
-      const emptyTabId = generateEmptyTabId();
-      const emptyTab: EditorTab = {
-        id: emptyTabId,
-        type: "chapter",
-        refId: null,
-        title: "",
-        isLocked: false,
-        scrollTop: 0,
-      };
-      set({
-        tabs: [emptyTab],
-        activeTabId: emptyTabId,
-      });
-      persistTabs(currentProjectId, [emptyTab], emptyTabId);
+      set({ tabs: [], activeTabId: null });
+      persistTabs(currentProjectId, [], null);
       return;
     }
 
