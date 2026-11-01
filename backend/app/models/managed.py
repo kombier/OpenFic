@@ -125,7 +125,7 @@ def read_catalog(session: AsyncSession) -> ManagedCatalog | None:
             # Treat it as inactive only after the model key is also removed.
             if not isinstance(raw, dict):
                 raise ValueError("Expected a config object")
-            active = "magpie" in raw and not (raw["magpie"] == {} and not raw.get("model"))
+            active = "magpie" in raw and not (raw["magpie"] == {} and "model" not in raw)
             session.info[_SESSION_KEY] = ManagedCatalog.model_validate(raw) if active else None
         except FileNotFoundError:
             session.info[_SESSION_KEY] = None

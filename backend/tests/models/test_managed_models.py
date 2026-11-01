@@ -91,6 +91,7 @@ async def test_reject_mutations_and_subscription_refs(session, catalog_file):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad", [
     [], {"model": "still-connected", "magpie": {}}, {"magpie": "not-an-object"},
+    *[{"model": value, "magpie": {}} for value in [None, False, 0, ""]],
     {**config(), "model": "codex/gpt-6.1-sol"},
     {**config(), "magpie": {**config()["magpie"], "url": "https://other.example/v1"}},
     {**config(), "magpie": {**config()["magpie"], "models": [{"id": "zcode/GLM-5.3", "name": "bad"}]}},
