@@ -121,10 +121,11 @@ def read_catalog(session: AsyncSession) -> ManagedCatalog | None:
         path = Path(os.environ.get("OPENFIC_MAGPIE_CONFIG", "~/.config/openfic/magpie.json")).expanduser()
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            # Magpie restores/removes its keys on disconnect. An empty object is inactive.
+            # Native per-key disconnect leaves an empty magpie namespace.
+            # Treat it as inactive only after the model key is also removed.
             if not isinstance(raw, dict):
                 raise ValueError("Expected a config object")
-            active = "magpie" in raw
+            active = "magpie" in raw and not (raw["magpie"] == {} and not raw.get("model"))
             session.info[_SESSION_KEY] = ManagedCatalog.model_validate(raw) if active else None
         except FileNotFoundError:
             session.info[_SESSION_KEY] = None

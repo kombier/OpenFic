@@ -62,7 +62,7 @@ async def test_overlay_and_disconnect_preserve_database(session, catalog_file):
     assert (await setting_repo.get_by_key(session, "default_model")).value == "stable-id"
     session.info.clear()
     assert (await setting_repo.get_by_key(session, "default_model")).value.startswith("magpie-")
-    catalog_file.write_text("{}")
+    catalog_file.write_text('{"magpie": {}}')
     session.info.clear()
     assert [m.name for m in await model_repo.get_all(session)] == ["Old Name", "Local embedding"]
     assert (await setting_repo.get_by_key(session, "default_model")).value == "stable-id"
@@ -90,7 +90,7 @@ async def test_reject_mutations_and_subscription_refs(session, catalog_file):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad", [
-    [], {"magpie": {}}, {"magpie": "not-an-object"},
+    [], {"model": "still-connected", "magpie": {}}, {"magpie": "not-an-object"},
     {**config(), "model": "codex/gpt-6.1-sol"},
     {**config(), "magpie": {**config()["magpie"], "url": "https://other.example/v1"}},
     {**config(), "magpie": {**config()["magpie"], "models": [{"id": "zcode/GLM-5.3", "name": "bad"}]}},
