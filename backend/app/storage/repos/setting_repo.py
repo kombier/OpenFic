@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.storage.models.setting import Setting
-from app.models.managed import read_catalog, require_manual_models, require_persistent_reference
 
 
 async def get_all(session: AsyncSession) -> list[Setting]:
@@ -24,11 +23,7 @@ async def get_all(session: AsyncSession) -> list[Setting]:
         设置列表。
     """
     result = await session.execute(select(Setting))
-    rows = list(result.scalars().all())
-    if catalog := read_catalog(session):
-        rows = [s for s in rows if s.key != "default_model"]
-        rows.append(Setting(key="default_model", value=await catalog.default_id(session)))
-    return rows
+    return list(result.scalars().all())
 
 
 async def get_by_key(session: AsyncSession, key: str) -> Setting | None:
@@ -42,8 +37,6 @@ async def get_by_key(session: AsyncSession, key: str) -> Setting | None:
     Returns:
         设置实例，如果不存在则返回 None。
     """
-    if key == "default_model" and (catalog := read_catalog(session)):
-        return Setting(key=key, value=await catalog.default_id(session))
     result = await session.execute(select(Setting).where(col(Setting.key) == key))
     return result.scalar_one_or_none()
 
@@ -60,10 +53,6 @@ async def upsert(session: AsyncSession, key: str, value: str) -> Setting:
     Returns:
         设置实例。
     """
-    if key in {"light_model", "summary_model", "compaction_model"}:
-        require_persistent_reference(value)
-    if key == "default_model":
-        require_manual_models(session)
     existing = await get_by_key(session, key)
     if existing:
         existing.value = value

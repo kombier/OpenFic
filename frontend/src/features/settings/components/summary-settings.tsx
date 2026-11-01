@@ -186,7 +186,7 @@ export function SummarySettings({ onCloseSettings, isAgentSettingsLocked }: Summ
     queryKey: ["settings"],
     queryFn: fetchSettings,
   });
-  const { options: llmModelOptions, isLoading: isModelsLoading } = useLlmModelOptions(true);
+  const { options: llmModelOptions, isLoading: isModelsLoading } = useLlmModelOptions();
   const [summaryModel, setSummaryModel] = useState(settings?.summaryModel ?? "");
   const [summaryModelReasoningEffort, setSummaryModelReasoningEffort] = useState(
     settings?.summaryModelReasoningEffort ?? "medium",

@@ -1436,7 +1436,8 @@
     "openaiCodexCallbackFailed": "回调链接无效、授权失败或已过期。请检查链接，或重新开始授权。"
   },
   "models": {
-    "magpieManaged": "模型列表、连接和默认模型由 Magpie 管理；请在 Magpie 的 OpenFic 页面修改，刷新后生效。轻量模型和角色仍可在此选择。",
+    "refreshMagpieModels": "刷新模型",
+    "magpieManaged": "Magpie 提供连接和可用模型；默认、轻量、摘要、角色和会话模型，以及生成参数，在 OpenFic 中设置。",
     "title": "模型",
     "description": "管理和配置 AI 模型",
     "newModel": "新建模型",

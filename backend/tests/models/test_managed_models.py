@@ -1,4 +1,4 @@
-"""Managed model reads must not mutate the manual database configuration."""
+"""Magpie controls exposure; OpenFic owns all local uses of available models."""
 
 import json
 
@@ -20,14 +20,19 @@ def catalog_file(tmp_path, monkeypatch):
     return path
 
 
-def config(default="chatgpt-api/gpt-6.1-sol"):
+def config():
     return {
-        "model": default,
         "magpie": {
-            "version": 1, "url": "http://127.0.0.1:3425/v1", "api_key": "private-test-key",
+            "version": 2,
+            "url": "http://127.0.0.1:3425/v1",
+            "api_key": "private-test-key",
             "models": [
-                {"id": "chatgpt-api/gpt-6.1-sol", "name": "GPT-6.1 Sol", "context": 500000,
-                 "pricing": {"prompt": "0.000003", "completion": "0.000012"}},
+                {
+                    "id": "chatgpt-api/gpt-6.1-sol",
+                    "name": "GPT-6.1 Sol",
+                    "context": 500000,
+                    "pricing": {"prompt": "0.000003", "completion": "0.000012"},
+                },
                 {"id": "zhipu/glm-5.3", "name": "GLM-5.3", "context": 1000000},
             ],
         },
@@ -35,71 +40,159 @@ def config(default="chatgpt-api/gpt-6.1-sol"):
 
 
 @pytest.mark.asyncio
-async def test_overlay_and_disconnect_preserve_database(session, catalog_file):
-    provider = ModelProvider(id="manual", name="Manual", provider_type="openai-compatible",
-                             url="http://127.0.0.1:3425/v1", api_key_encrypted="unchanged")
-    model = Model(id="stable-id", name="Old Name", provider_id="manual",
-                  model_id="chatgpt-api/gpt-6.1-sol", temperature=0.4)
-    embedding = Model(id="embed", name="Local embedding", provider_id="manual",
-                      model_id="embed", task_type="embedding")
+async def test_catalog_keeps_local_choices_parameters_and_durable_ids(
+    session, catalog_file
+):
+    provider = ModelProvider(
+        id="manual",
+        name="Manual",
+        provider_type="openai-compatible",
+        url="http://127.0.0.1:3425/v1",
+        api_key_encrypted="unchanged",
+    )
+    model = Model(
+        id="stable-id",
+        name="My GPT",
+        provider_id="manual",
+        model_id="chatgpt-api/gpt-6.1-sol",
+        temperature=0.4,
+        max_tokens=4096,
+    )
+    embedding = Model(
+        id="embed",
+        name="Local embedding",
+        provider_id="manual",
+        model_id="embed",
+        task_type="embedding",
+    )
     setting = Setting(key="default_model", value="stable-id")
     session.add_all([provider, model, embedding, setting])
     await session.flush()
-    before = [m.model_dump(mode="json") for m in (await session.execute(select(Model))).scalars()]
+    original = model.model_dump(mode="json")
     catalog_file.write_text(json.dumps(config()))
     managed = await model_repo.get_all(session)
     gpt = next(m for m in managed if m.id == "stable-id")
-    assert (gpt.name, gpt.provider_id, gpt.temperature, gpt.input_price) == ("GPT-6.1 Sol", PROVIDER_ID, 0.4, 3.0)
-    assert next(m for m in managed if m.id == "embed").model_dump() == embedding.model_dump()
-    assert (await setting_repo.get_by_key(session, "default_model")).value == "stable-id"
-    assert (await model_provider_repo.get_by_id(session, PROVIDER_ID)).url.endswith("/v1")
-    assert (await model_provider_repo.get_by_id(session, "manual")).id == "manual"
-    await session.flush()
-    assert [m.model_dump(mode="json") for m in (await session.execute(select(Model))).scalars()] == before
-    assert (await session.execute(select(ModelProvider))).scalars().one().api_key_encrypted == "unchanged"
-    # New sessions see the new file, existing resolutions keep one consistent snapshot.
-    catalog_file.write_text(json.dumps(config("zhipu/glm-5.3")))
-    assert (await setting_repo.get_by_key(session, "default_model")).value == "stable-id"
+    assert (
+        gpt.name,
+        gpt.provider_id,
+        gpt.temperature,
+        gpt.max_tokens,
+        gpt.input_price,
+    ) == ("My GPT", PROVIDER_ID, 0.4, 4096, 3.0)
+    assert (
+        next(m for m in managed if m.id == "embed").model_dump()
+        == embedding.model_dump()
+    )
+    glm = next(m for m in managed if m.model_id == "zhipu/glm-5.3")
+    assert (
+        await session.execute(select(Model).where(Model.id == glm.id))
+    ).scalar_one().provider_id == "manual"
+    assert model.model_dump(mode="json") == original
+    await setting_repo.upsert(session, "default_model", glm.id)
+    await setting_repo.upsert(session, "light_model", glm.id)
+    await model_repo.update(
+        session, glm.id, name="My GLM", temperature=0.2, max_tokens=2048
+    )
+    assert (await setting_repo.get_by_key(session, "default_model")).value == glm.id
+    # Refresh supplies metadata, never overwrites OpenFic usage choices or tuning.
+    data = config()
+    data["magpie"]["models"][1]["context"] = 900000
+    catalog_file.write_text(json.dumps(data))
     session.info.clear()
-    assert (await setting_repo.get_by_key(session, "default_model")).value.startswith("magpie-")
+    changed = await model_repo.get_by_id(session, glm.id)
+    assert (
+        changed.name,
+        changed.temperature,
+        changed.max_tokens,
+        changed.context_length,
+    ) == ("My GLM", 0.2, 2048, 900000)
+    assert (await setting_repo.get_by_key(session, "default_model")).value == glm.id
+    assert len((await session.execute(select(Model))).scalars().all()) == 3
     catalog_file.write_text('{"magpie": {}}')
     session.info.clear()
-    assert [m.name for m in await model_repo.get_all(session)] == ["Old Name", "Local embedding"]
-    assert (await setting_repo.get_by_key(session, "default_model")).value == "stable-id"
+    local = await model_repo.get_by_id(session, glm.id)
+    assert (local.name, local.temperature, local.max_tokens, local.provider_id) == (
+        "My GLM",
+        0.2,
+        2048,
+        "manual",
+    )
+    assert (await setting_repo.get_by_key(session, "default_model")).value == glm.id
+    assert (
+        await model_provider_repo.get_by_id(session, "manual")
+    ).api_key_encrypted == "unchanged"
 
 
 @pytest.mark.asyncio
-async def test_reject_mutations_and_subscription_refs(session, catalog_file):
+async def test_magpie_owns_exposure_and_connection_only(session, catalog_file):
     catalog_file.write_text(json.dumps(config()))
     rows = await model_repo.get_all(session)
+    assert await setting_repo.get_by_key(session, "default_model") is None
     with pytest.raises(ValueError, match="Magpie"):
         await model_repo.delete_by_id(session, rows[0].id)
     with pytest.raises(ValueError, match="Magpie"):
-        await model_repo.update(session, rows[0].id, name="Override")
+        await model_repo.update(
+            session, rows[0].id, model_identifier="codex/gpt-6.1-sol"
+        )
     with pytest.raises(ValueError, match="Magpie"):
         await model_provider_repo.delete_by_id(session, PROVIDER_ID)
-    with pytest.raises(ValueError, match="Magpie"):
-        await setting_repo.upsert(session, "default_model", "other")
-    await setting_repo.upsert(session, "language", "zh-CN")
-    assert (await setting_repo.get_by_key(session, "language")).value == "zh-CN"
+    for key in ["default_model", "light_model", "summary_model", "compaction_model"]:
+        await setting_repo.upsert(session, key, rows[1].id)
+        assert (await setting_repo.get_by_key(session, key)).value == rows[1].id
     with pytest.raises(ValueError, match="Magpie"):
         await model_repo.get_by_id(session, "codex/gpt-6.1-sol")
+    data = config()
+    data["magpie"]["models"] = []
+    catalog_file.write_text(json.dumps(data))
+    session.info.clear()
+    assert await model_repo.get_all(session) == []
     with pytest.raises(ValueError, match="Magpie"):
-        await setting_repo.upsert(session, "light_model", rows[0].id)
+        await model_repo.get_by_id(session, rows[1].id)
+    assert (await setting_repo.get_by_key(session, "default_model")).value == rows[1].id
+    catalog_file.write_text('{"magpie": {}}')
+    session.info.clear()
+    gpt = await model_repo.get_by_id(session, rows[0].id)
+    assert gpt.input_price == 3.0 and gpt.output_price == 12.0
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bad", [
-    [], {"model": "still-connected", "magpie": {}}, {"magpie": "not-an-object"},
-    *[{"model": value, "magpie": {}} for value in [None, False, 0, ""]],
-    {**config(), "model": "codex/gpt-6.1-sol"},
-    {**config(), "magpie": {**config()["magpie"], "url": "https://other.example/v1"}},
-    {**config(), "magpie": {**config()["magpie"], "models": [{"id": "zcode/GLM-5.3", "name": "bad"}]}},
-    {**config(), "magpie": {**config()["magpie"], "models": [{"id": "group/hermes-daily", "name": "bad"}]}},
-    {**config(), "magpie": {**config()["magpie"], "models": [config()["magpie"]["models"][0]] * 2}},
-    {**config(), "magpie": {**config()["magpie"], "api_key": ""}},
-])
-async def test_invalid_config_fails_closed_without_key_in_error(session, catalog_file, bad):
+@pytest.mark.parametrize(
+    "bad",
+    [
+        [],
+        {"magpie": "not-an-object"},
+        {"magpie": {"version": 2}},
+        {
+            **config(),
+            "magpie": {**config()["magpie"], "url": "https://other.example/v1"},
+        },
+        {
+            **config(),
+            "magpie": {
+                **config()["magpie"],
+                "models": [{"id": "zcode/GLM-5.3", "name": "bad"}],
+            },
+        },
+        {
+            **config(),
+            "magpie": {
+                **config()["magpie"],
+                "models": [{"id": "group/hermes-daily", "name": "bad"}],
+            },
+        },
+        {
+            **config(),
+            "magpie": {
+                **config()["magpie"],
+                "models": [config()["magpie"]["models"][0]] * 2,
+            },
+        },
+        {**config(), "magpie": {**config()["magpie"], "api_key": ""}},
+    ],
+)
+async def test_invalid_config_fails_closed_without_key_in_error(
+    session, catalog_file, bad
+):
     catalog_file.write_text(json.dumps(bad))
     with pytest.raises(ValueError, match="Magpie") as exc:
         read_catalog(session)

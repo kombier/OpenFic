@@ -484,7 +484,7 @@ export function ModelsSettings({
                   }
                   editable={false}
                   allowCustomValue={false}
-                  disabled={isAgentSettingsLocked || isMagpieManaged || !hasLlmModels}
+                  disabled={isAgentSettingsLocked || !hasLlmModels}
                   emptyOptionLabel={`（${t("models.selectModelPlaceholder")}）`}
                   triggerClassName="select-trigger--background"
                   contentClassName="settings-background-panel"
@@ -530,7 +530,7 @@ export function ModelsSettings({
                 <ModelIdSelect
                   value={settings?.lightModel || ""}
                   onChange={handleLightModelChange}
-                  models={llmModelOptions.filter((model) => !model.value?.startsWith("magpie-"))}
+                  models={llmModelOptions}
                   placeholder={
                     hasLlmModels
                       ? t("models.selectModelPlaceholder")
@@ -727,7 +727,7 @@ export function ModelsSettings({
                           </IconButton>
                         </Tooltip>
                       ) : null}
-                      {model.isBuiltin || model.isManaged ? null : (
+                      {model.isBuiltin ? null : (
                         <>
                           <Tooltip content={t("models.editModel")}>
                             <IconButton
@@ -740,17 +740,19 @@ export function ModelsSettings({
                               <Edit size={16} />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip content={t("models.deleteModel")}>
-                            <IconButton
-                              variant="ghost"
-                              color="red"
-                              onClick={() => handleDelete(model)}
-                              disabled={isAgentSettingsLocked}
-                              aria-label={t("models.deleteModel")}
-                            >
-                              <Trash2 size={16} />
-                            </IconButton>
-                          </Tooltip>
+                          {!model.isManaged ? (
+                            <Tooltip content={t("models.deleteModel")}>
+                              <IconButton
+                                variant="ghost"
+                                color="red"
+                                onClick={() => handleDelete(model)}
+                                disabled={isAgentSettingsLocked}
+                                aria-label={t("models.deleteModel")}
+                              >
+                                <Trash2 size={16} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null}
                         </>
                       )}
                     </Flex>

@@ -1436,7 +1436,8 @@
     "openaiCodexCallbackFailed": "The callback URL is invalid, authorization failed, or the attempt expired. Check the URL or start authorization again."
   },
   "models": {
-    "magpieManaged": "Connections, available models and the default model are managed by Magpie. Change them on its OpenFic page and refresh. Light and role models can still be selected here.",
+    "refreshMagpieModels": "Refresh models",
+    "magpieManaged": "Magpie supplies the connection and available models. Choose default, light, summary, role and session models, and tune generation settings in OpenFic.",
     "title": "Models",
     "description": "Manage and configure AI models",
     "newModel": "New Model",

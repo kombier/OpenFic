@@ -11,7 +11,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.managed import read_catalog, require_manual_models
+from app.models.managed import PROVIDER_ID, read_catalog, require_manual_models
 from app.models.entities.model import Model
 from app.models.clients.model_params import (
     DEFAULT_CONTEXT_LENGTH,
@@ -247,7 +247,17 @@ async def update(
         更新后的模型实例，如果不存在则返回 None。
     """
     model = await get_by_id(session, model_id)
-    if model and (model.task_type == "llm" or task_type == "llm"):
+    if model and model.provider_id == PROVIDER_ID:
+        supplied = {"provider_id": provider_id, "model_id": model_identifier,
+                    "task_type": task_type, "context_length": context_length,
+                    "input_price": input_price, "output_price": output_price,
+                    "cache_read_price": cache_read_price, "cache_write_price": cache_write_price}
+        if any(value is not None and value != getattr(model, key) for key, value in supplied.items()):
+            raise ValueError("连接、模型标识和目录元数据由 Magpie 提供；模型用途和生成参数可在 OpenFic 修改")
+        provider_id = model_identifier = task_type = context_length = None
+        input_price = output_price = cache_read_price = cache_write_price = None
+        model = (await session.execute(select(Model).where(col(Model.id) == model_id))).scalar_one()
+    elif model and task_type == "llm":
         require_manual_models(session)
     if not model:
         return None
@@ -297,6 +307,8 @@ async def update(
     session.add(model)
     await session.flush()
     await session.refresh(model)
+    if read_catalog(session) and model.task_type == "llm":
+        return await get_by_id(session, model_id)
     return model
 
 

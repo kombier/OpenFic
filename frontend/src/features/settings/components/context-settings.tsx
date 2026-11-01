@@ -73,7 +73,7 @@ type NumericField = (typeof numericFields)[number];
 export function ContextSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { options: llmModelOptions, isLoading: isModelsLoading } = useLlmModelOptions(true);
+  const { options: llmModelOptions, isLoading: isModelsLoading } = useLlmModelOptions();
   const { data: settings, isLoading } = useQuery({
     queryKey: ["settings"],
     queryFn: fetchSettings,

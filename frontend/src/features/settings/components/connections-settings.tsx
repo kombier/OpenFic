@@ -715,30 +715,45 @@ export function ConnectionsSettings({
                     gap="2"
                     className="connections-settings__item-actions"
                   >
-                    <Tooltip content={t("connections.editConnection")}>
-                      <IconButton
-                        variant="ghost"
-                        color="gray"
-                        onClick={() => handleEdit(connection)}
-                        disabled={
-                          isAgentSettingsLocked || isOAuthAuthenticating || connection.isManaged
-                        }
-                        aria-label={t("connections.editConnection")}
+                    {connection.isManaged ? (
+                      <Button
+                        variant="soft"
+                        onClick={() => {
+                          void queryClient.invalidateQueries({ queryKey: ["models"] });
+                          void queryClient.invalidateQueries({ queryKey: ["model-providers"] });
+                        }}
                       >
-                        <Edit size={16} />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip content={t("connections.deleteConnection")}>
-                      <IconButton
-                        variant="ghost"
-                        color="red"
-                        onClick={() => handleDelete(connection)}
-                        disabled={isAgentSettingsLocked || connection.isManaged}
-                        aria-label={t("connections.deleteConnection")}
-                      >
-                        <Trash2 size={16} />
-                      </IconButton>
-                    </Tooltip>
+                        <RefreshCw size={16} />
+                        {t("models.refreshMagpieModels")}
+                      </Button>
+                    ) : (
+                      <>
+                        <Tooltip content={t("connections.editConnection")}>
+                          <IconButton
+                            variant="ghost"
+                            color="gray"
+                            onClick={() => handleEdit(connection)}
+                            disabled={
+                              isAgentSettingsLocked || isOAuthAuthenticating || connection.isManaged
+                            }
+                            aria-label={t("connections.editConnection")}
+                          >
+                            <Edit size={16} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip content={t("connections.deleteConnection")}>
+                          <IconButton
+                            variant="ghost"
+                            color="red"
+                            onClick={() => handleDelete(connection)}
+                            disabled={isAgentSettingsLocked || connection.isManaged}
+                            aria-label={t("connections.deleteConnection")}
+                          >
+                            <Trash2 size={16} />
+                          </IconButton>
+                        </Tooltip>
+                      </>
+                    )}
                   </Flex>
                 </Flex>
                 {index < externalConnections.length - 1 && (

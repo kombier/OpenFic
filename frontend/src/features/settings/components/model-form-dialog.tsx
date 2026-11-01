@@ -212,7 +212,7 @@ export function ModelFormDialog({
     () => providers?.find((p) => p.id === providerId),
     [providers, providerId],
   );
-  const isModelSelectionDisabled = !providerId;
+  const isModelSelectionDisabled = !providerId || Boolean(model?.isManaged);
 
   const getProviderOptionLabel = useCallback((provider: ModelProvider) => {
     return provider.name || provider.url || resolveProviderDisplayName(provider);
@@ -424,14 +424,30 @@ export function ModelFormDialog({
       };
 
       try {
-        await onSubmit(requestData);
+        await onSubmit(
+          model?.isManaged
+            ? {
+                name: data.name,
+                remark: data.remark,
+                temperature: data.temperature,
+                top_p: data.topP,
+                top_k: data.topK,
+                min_p: data.minP,
+                top_a: data.topA,
+                frequency_penalty: data.frequencyPenalty,
+                presence_penalty: data.presencePenalty,
+                repetition_penalty: data.repetitionPenalty,
+                max_tokens: data.maxTokens,
+              }
+            : requestData,
+        );
         reset();
       } catch (error) {
         console.error("提交失败:", error);
         throw error;
       }
     },
-    [onSubmit, reset],
+    [model?.isManaged, onSubmit, reset],
   );
 
   const handleOpenChange = useCallback(
@@ -566,7 +582,7 @@ export function ModelFormDialog({
                       onChange={handleTaskTypeChange}
                       triggerStyle={{ width: "100%" }}
                       placeholder={t("models.taskTypePlaceholder")}
-                      disabled={isAgentSettingsLocked}
+                      disabled={isAgentSettingsLocked || Boolean(model?.isManaged)}
                     />
                   )}
                 />
@@ -611,7 +627,7 @@ export function ModelFormDialog({
                       onChange={handleProviderChange}
                       triggerStyle={{ width: "100%" }}
                       placeholder={t("models.providerPlaceholder")}
-                      disabled={isAgentSettingsLocked}
+                      disabled={isAgentSettingsLocked || Boolean(model?.isManaged)}
                     />
                   )}
                 />
@@ -811,7 +827,7 @@ export function ModelFormDialog({
                   <ModelMetadataSection
                     control={control}
                     modelId={model?.id}
-                    disabled={isAgentSettingsLocked}
+                    disabled={isAgentSettingsLocked || Boolean(model?.isManaged)}
                   />
                   <AdvancedParamsSection
                     control={control}
