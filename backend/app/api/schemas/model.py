@@ -54,6 +54,7 @@ class ModelResponse(BaseModel):
     cache_write_price: float = Field(description="缓存写入价格（美元/百万 token）")
     dimensions: int | None = Field(description="Embedding 维度（Embedding 专用）")
     is_builtin: bool = Field(default=False, description="是否为内置模型")
+    is_managed: bool = Field(default=False, description="是否由 Magpie 管理")
     created_at: str = Field(description="创建时间")
     updated_at: str = Field(description="更新时间")
 

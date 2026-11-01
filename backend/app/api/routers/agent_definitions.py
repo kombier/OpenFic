@@ -18,6 +18,7 @@ from app.api.agent_settings_lock import require_agent_settings_unlocked
 from app.agent_runtime.agents.definitions import agent_definition_from_record
 from app.agent_runtime.agents.tool_categories import list_tool_categories
 from app.core.errors import NotFoundError, ValidationError
+from app.models.managed import require_persistent_reference
 from app.storage.database import get_session
 from app.storage.services import agent_definition_service, prompt_chain_service
 
@@ -103,6 +104,7 @@ async def create_definition(
 ) -> AgentDefinitionResponse:
     try:
         await require_agent_settings_unlocked(session)
+        require_persistent_reference(body.model_id)
         record = await agent_definition_service.create_definition(
             session,
             key=body.key,
@@ -146,6 +148,7 @@ async def update_definition(
 ) -> AgentDefinitionResponse:
     try:
         await require_agent_settings_unlocked(session)
+        require_persistent_reference(body.model_id)
         record = await agent_definition_service.update_definition(
             session,
             key=key,

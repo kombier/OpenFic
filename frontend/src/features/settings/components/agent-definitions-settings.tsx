@@ -799,7 +799,7 @@ export function AgentDefinitionsSettings({
     queryFn: fetchSettings,
   });
 
-  const { options: llmModelOptions, isLoading: isModelOptionsLoading } = useLlmModelOptions();
+  const { options: llmModelOptions, isLoading: isModelOptionsLoading } = useLlmModelOptions(true);
   const hasLlmModels = llmModelOptions.length > 0;
   const modelOptions = useMemo(
     () => buildAgentModelOptions(llmModelOptions, t),

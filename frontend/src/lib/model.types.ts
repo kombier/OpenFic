@@ -22,6 +22,7 @@ export interface ModelProvider {
   supportedTaskTypes: TaskType[];
   iconPath: string | null;
   isBuiltin: boolean;
+  isManaged?: boolean;
   accountEmail: string | null;
   accountConnected: boolean | null;
   openaiCodexAccessEnabled: boolean | null;
@@ -52,6 +53,7 @@ export interface ModelProviderResponse {
   supported_task_types: string[];
   icon_path: string | null;
   is_builtin?: boolean;
+  is_managed?: boolean;
   account_email?: string | null;
   account_connected?: boolean | null;
   openai_codex_access_enabled?: boolean | null;
@@ -134,6 +136,7 @@ export interface Model {
   cacheWritePrice: number;
   dimensions: number | null;
   isBuiltin: boolean;
+  isManaged?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -162,6 +165,7 @@ export interface ModelResponse {
   cache_write_price: number;
   dimensions: number | null;
   is_builtin?: boolean;
+  is_managed?: boolean;
   created_at: string;
   updated_at: string;
 }

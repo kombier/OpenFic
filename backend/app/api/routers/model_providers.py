@@ -107,6 +107,7 @@ async def _build_provider_response(
         supported_task_types=supported_task_types,
         icon_path=icon_path,
         is_builtin=provider.is_builtin,
+        is_managed=provider.id == "magpie-managed",
         account_email=credentials.email if credentials else None,
         account_connected=credentials.is_connected if credentials else None,
         openai_codex_access_enabled=credentials.openai_codex_access_enabled if credentials else None,
@@ -387,6 +388,17 @@ async def get_provider_models(
         HTTPException: 如果提供商不存在。
     """
     logger.info(f"获取提供商模型列表: {provider_id}")
+    if provider_id == "magpie-managed":
+        from app.models.managed import read_catalog
+        catalog = read_catalog(session)
+        if catalog:
+            return ModelProviderValidateResponse(
+                success=True,
+                message="模型列表由 Magpie 管理",
+                models=[AvailableModel(id=m.id, name=m.name, task_type="llm")
+                        for m in catalog.magpie.models] if task_type == "llm" else [],
+            )
+
 
     try:
         # 获取提供商信息

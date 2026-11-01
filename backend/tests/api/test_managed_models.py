@@ -1,0 +1,40 @@
+import json
+
+import pytest
+
+from app.models.repos import model_repo
+from tests.models.test_managed_models import config
+
+
+@pytest.mark.asyncio
+async def test_managed_catalog_api_and_mutation_guards(client, session, tmp_path, monkeypatch):
+    path = tmp_path / "managed.json"
+    monkeypatch.setenv("OPENFIC_MAGPIE_CONFIG", str(path))
+    path.write_text(json.dumps(config()))
+    response = await client.get("/api/v1/models")
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    assert all(row["is_managed"] and not row["is_builtin"] for row in rows)
+    providers = (await client.get("/api/v1/model-providers")).json()
+    assert providers[0]["is_managed"]
+    assert providers[0]["supported_task_types"] == ["llm"]
+    assert "private-test-key" not in json.dumps(providers)
+    available = (await client.get("/api/v1/model-providers/magpie-managed/models")).json()
+    assert [m["id"] for m in available["models"]] == [m["id"] for m in config()["magpie"]["models"]]
+    default = (await client.get("/api/v1/settings")).json()["default_model"]
+    assert (await model_repo.get_by_id(session, default)).model_id == config()["model"]
+    for method, url, payload in [
+        ("put", "/api/v1/models/" + rows[0]["id"], {"name": "Changed"}),
+        ("delete", "/api/v1/models/" + rows[0]["id"], None),
+        ("delete", "/api/v1/model-providers/magpie-managed", None),
+        ("patch", "/api/v1/settings", {"default_model": rows[1]["id"]}),
+        ("patch", "/api/v1/settings", {"light_model": rows[0]["id"]}),
+        ("put", "/api/v1/agent-definitions/writer", {"model_id": rows[0]["id"]}),
+    ]:
+        kwargs = {} if payload is None else {"json": payload}
+        response = await getattr(client, method)(url, **kwargs)
+        assert response.status_code == 400, (url, response.status_code, response.text)
+    # Following the system default is a durable native policy, not a virtual ID.
+    response = await client.put("/api/v1/agent-definitions/writer", json={"model_id": "__system_default_model__"})
+    assert response.status_code == 200

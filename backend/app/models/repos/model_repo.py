@@ -11,6 +11,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.models.managed import read_catalog, require_manual_models
 from app.models.entities.model import Model
 from app.models.clients.model_params import (
     DEFAULT_CONTEXT_LENGTH,
@@ -36,6 +37,8 @@ async def get_all(session: AsyncSession) -> list[Model]:
     Returns:
         模型列表。
     """
+    if catalog := read_catalog(session):
+        return await catalog.models(session)
     result = await session.execute(select(Model))
     return list(result.scalars().all())
 
@@ -51,6 +54,8 @@ async def get_by_provider_id(session: AsyncSession, provider_id: str) -> list[Mo
     Returns:
         模型列表。
     """
+    if read_catalog(session):
+        return [m for m in await get_all(session) if m.provider_id == provider_id]
     result = await session.execute(
         select(Model).where(col(Model.provider_id) == provider_id)
     )
@@ -68,6 +73,11 @@ async def get_by_id(session: AsyncSession, model_id: str) -> Model | None:
     Returns:
         模型实例，如果不存在则返回 None。
     """
+    if read_catalog(session):
+        model = next((m for m in await get_all(session) if m.id == model_id), None)
+        if model is None:
+            raise ValueError("此模型不在 Magpie 的 OpenFic 可用目录中，请重新选择模型")
+        return model
     result = await session.execute(select(Model).where(col(Model.id) == model_id))
     return result.scalar_one_or_none()
 
@@ -76,6 +86,8 @@ async def exists_by_name(
     session: AsyncSession, name: str, *, exclude_model_id: str | None = None
 ) -> bool:
     """检查是否存在同名模型，可排除当前编辑的模型。"""
+    if read_catalog(session):
+        return any(m.name == name and m.id != exclude_model_id for m in await get_all(session))
     statement = select(col(Model.id)).where(col(Model.name) == name)
     if exclude_model_id is not None:
         statement = statement.where(col(Model.id) != exclude_model_id)
@@ -91,6 +103,11 @@ async def get_by_legacy_agent_config(
     base_url: str,
 ) -> Model | None:
     """Find the unique current model matching a checkpoint created before model IDs persisted."""
+    if catalog := read_catalog(session):
+        if provider_type != "openai-compatible" or base_url.rstrip("/") != catalog.magpie.url.rstrip("/"):
+            return None
+        matches = [m for m in await catalog.models(session) if m.model_id == model_id]
+        return matches[0] if len(matches) == 1 else None
     result = await session.execute(
         select(Model)
         .join(ModelProvider, col(Model.provider_id) == col(ModelProvider.id))
@@ -150,6 +167,8 @@ async def create(
     Returns:
         创建的模型实例。
     """
+    if task_type == "llm":
+        require_manual_models(session)
     model = Model(
         name=name,
         provider_id=provider_id,
@@ -228,6 +247,8 @@ async def update(
         更新后的模型实例，如果不存在则返回 None。
     """
     model = await get_by_id(session, model_id)
+    if model and (model.task_type == "llm" or task_type == "llm"):
+        require_manual_models(session)
     if not model:
         return None
 
@@ -290,5 +311,9 @@ async def delete_by_id(session: AsyncSession, model_id: str) -> bool:
     Returns:
         是否成功删除。
     """
+    if read_catalog(session):
+        model = await get_by_id(session, model_id)
+        if model is None or model.task_type == "llm":
+            require_manual_models(session)
     result = await session.execute(delete(Model).where(col(Model.id) == model_id))
     return cast("CursorResult[Any]", result).rowcount > 0

@@ -68,6 +68,11 @@ TEST_DATABASE_URL = os.getenv(
 _per_test_session: AsyncSession | None = None
 
 
+@pytest.fixture(autouse=True)
+def isolated_magpie_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENFIC_MAGPIE_CONFIG", str(tmp_path / "magpie.json"))
+
+
 @pytest.fixture
 def fast_checkpoint_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
     """Avoid host-dependent fsync latency in checkpoint behavior tests."""

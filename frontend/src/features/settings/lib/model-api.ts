@@ -157,6 +157,7 @@ function transformProvider(raw: ModelProviderResponse): ModelProvider {
     supportedTaskTypes: raw.supported_task_types as ModelProvider["supportedTaskTypes"],
     iconPath: raw.icon_path || null,
     isBuiltin: raw.is_builtin ?? false,
+    isManaged: raw.is_managed ?? false,
     accountEmail: raw.account_email ?? null,
     accountConnected: raw.account_connected ?? null,
     openaiCodexAccessEnabled: raw.openai_codex_access_enabled ?? null,
@@ -193,6 +194,7 @@ function transformModel(raw: ModelResponse): Model {
     cacheWritePrice: raw.cache_write_price ?? 0,
     dimensions: raw.dimensions,
     isBuiltin: raw.is_builtin ?? false,
+    isManaged: raw.is_managed ?? false,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   };

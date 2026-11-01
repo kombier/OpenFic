@@ -154,6 +154,8 @@ export function ModelsSettings({
     [updateSettingsMutation],
   );
 
+  const isMagpieManaged = models?.some((model) => model.isManaged) ?? false;
+
   const llmModels = useMemo(() => models?.filter((m) => m.taskType === "llm") ?? [], [models]);
   const llmCatalogProviderTypes = useMemo(() => {
     if (!providers || llmModels.length === 0) {
@@ -421,6 +423,15 @@ export function ModelsSettings({
   return (
     <Box>
       <AgentSettingsLockNotice isLocked={isAgentSettingsLocked} />
+      {isMagpieManaged ? (
+        <Text
+          as="p"
+          size="2"
+          color="gray"
+        >
+          {t("models.magpieManaged")}
+        </Text>
+      ) : null}
       <Flex
         direction="column"
         gap="4"
@@ -473,7 +484,7 @@ export function ModelsSettings({
                   }
                   editable={false}
                   allowCustomValue={false}
-                  disabled={isAgentSettingsLocked || !hasLlmModels}
+                  disabled={isAgentSettingsLocked || isMagpieManaged || !hasLlmModels}
                   emptyOptionLabel={`（${t("models.selectModelPlaceholder")}）`}
                   triggerClassName="select-trigger--background"
                   contentClassName="settings-background-panel"
@@ -519,7 +530,7 @@ export function ModelsSettings({
                 <ModelIdSelect
                   value={settings?.lightModel || ""}
                   onChange={handleLightModelChange}
-                  models={llmModelOptions}
+                  models={llmModelOptions.filter((model) => !model.value?.startsWith("magpie-"))}
                   placeholder={
                     hasLlmModels
                       ? t("models.selectModelPlaceholder")
@@ -551,7 +562,7 @@ export function ModelsSettings({
         <Flex>
           <Button
             onClick={handleCreate}
-            disabled={isAgentSettingsLocked || !hasProviders}
+            disabled={isAgentSettingsLocked || isMagpieManaged || !hasProviders}
           >
             <Plus size={16} />
             {t("models.newModel")}
@@ -716,7 +727,7 @@ export function ModelsSettings({
                           </IconButton>
                         </Tooltip>
                       ) : null}
-                      {model.isBuiltin ? null : (
+                      {model.isBuiltin || model.isManaged ? null : (
                         <>
                           <Tooltip content={t("models.editModel")}>
                             <IconButton

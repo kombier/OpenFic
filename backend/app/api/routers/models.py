@@ -63,6 +63,7 @@ def _to_response(m) -> ModelResponse:
         cache_write_price=m.cache_write_price,
         dimensions=m.dimensions,
         is_builtin=m.is_builtin,
+        is_managed=m.provider_id == "magpie-managed",
         created_at=m.created_at.isoformat(),
         updated_at=m.updated_at.isoformat(),
     )

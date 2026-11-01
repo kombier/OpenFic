@@ -608,7 +608,9 @@ export function ConnectionsSettings({
           size="2"
           color="gray"
         >
-          {t("connections.description")}
+          {connections?.some((connection) => connection.isManaged)
+            ? t("models.magpieManaged")
+            : t("connections.description")}
         </Text>
 
         {/* 新建按钮 */}
@@ -618,7 +620,9 @@ export function ConnectionsSettings({
         >
           <Button
             onClick={handleCreate}
-            disabled={isAgentSettingsLocked}
+            disabled={
+              isAgentSettingsLocked || connections?.some((connection) => connection.isManaged)
+            }
           >
             <Plus size={16} />
             {t("connections.newConnection")}
@@ -716,7 +720,9 @@ export function ConnectionsSettings({
                         variant="ghost"
                         color="gray"
                         onClick={() => handleEdit(connection)}
-                        disabled={isAgentSettingsLocked || isOAuthAuthenticating}
+                        disabled={
+                          isAgentSettingsLocked || isOAuthAuthenticating || connection.isManaged
+                        }
                         aria-label={t("connections.editConnection")}
                       >
                         <Edit size={16} />
@@ -727,7 +733,7 @@ export function ConnectionsSettings({
                         variant="ghost"
                         color="red"
                         onClick={() => handleDelete(connection)}
-                        disabled={isAgentSettingsLocked}
+                        disabled={isAgentSettingsLocked || connection.isManaged}
                         aria-label={t("connections.deleteConnection")}
                       >
                         <Trash2 size={16} />

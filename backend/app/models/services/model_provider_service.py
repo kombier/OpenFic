@@ -106,6 +106,8 @@ class ModelProviderService:
         return await model_provider_repo.get_all(session)
 
     async def get_catalog_match(self, provider: ModelProvider) -> CatalogMatch | None:
+        if provider.id == "magpie-managed":
+            return None
         return await self.catalog_service.match_saved_provider(
             provider.provider_type, provider.url
         )
@@ -115,6 +117,8 @@ class ModelProviderService:
         provider: ModelProvider,
         catalog_match: CatalogMatch | None = None,
     ) -> list[str]:
+        if provider.id == "magpie-managed":
+            return ["llm"]
         if provider.is_builtin:
             return ["embedding", "rerank"]
         if provider.provider_type == OPENAI_CODEX_PROVIDER_TYPE:

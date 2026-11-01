@@ -11,7 +11,9 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.models.managed import PROVIDER_ID, read_catalog, require_manual_models
 from app.models.entities.model_provider import ModelProvider
+from app.models.entities.model import Model
 
 
 async def get_all(session: AsyncSession) -> list[ModelProvider]:
@@ -24,6 +26,13 @@ async def get_all(session: AsyncSession) -> list[ModelProvider]:
     Returns:
         提供商列表。
     """
+    if catalog := read_catalog(session):
+        result = await session.execute(select(ModelProvider))
+        providers = list(result.scalars().all())
+        retained = set((await session.execute(
+            select(col(Model.provider_id)).where(col(Model.task_type) != "llm")
+        )).scalars().all())
+        return [p for p in providers if p.is_builtin or p.id in retained] + [catalog.provider()]
     result = await session.execute(select(ModelProvider))
     return list(result.scalars().all())
 
@@ -39,6 +48,19 @@ async def get_by_id(session: AsyncSession, provider_id: str) -> ModelProvider | 
     Returns:
         提供商实例，如果不存在则返回 None。
     """
+    if catalog := read_catalog(session):
+        if provider_id == PROVIDER_ID:
+            return catalog.provider()
+        result = await session.execute(
+            select(ModelProvider).where(col(ModelProvider.id) == provider_id)
+        )
+        provider = result.scalar_one_or_none()
+        if provider and provider.is_builtin:
+            return provider
+        retained = (await session.execute(
+            select(col(Model.id)).where(col(Model.provider_id) == provider_id, col(Model.task_type) != "llm").limit(1)
+        )).scalar_one_or_none()
+        return provider if retained else None
     result = await session.execute(
         select(ModelProvider).where(col(ModelProvider.id) == provider_id)
     )
@@ -67,6 +89,7 @@ async def create(
     Returns:
         创建的提供商实例。
     """
+    require_manual_models(session)
     provider = ModelProvider(
         name=name,
         url=url,
@@ -104,6 +127,7 @@ async def update(
     Returns:
         更新后的提供商实例，如果不存在则返回 None。
     """
+    require_manual_models(session)
     provider = await get_by_id(session, provider_id)
     if not provider:
         return None
@@ -136,6 +160,7 @@ async def delete_by_id(session: AsyncSession, provider_id: str) -> bool:
     Returns:
         是否成功删除。
     """
+    require_manual_models(session)
     result = await session.execute(
         delete(ModelProvider).where(col(ModelProvider.id) == provider_id)
     )

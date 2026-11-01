@@ -18,7 +18,7 @@ export interface UseLlmModelOptionsResult {
   error: unknown;
 }
 
-export function useLlmModelOptions(): UseLlmModelOptionsResult {
+export function useLlmModelOptions(persistentOnly = false): UseLlmModelOptionsResult {
   const {
     data: models,
     isLoading: isModelsLoading,
@@ -65,42 +65,45 @@ export function useLlmModelOptions(): UseLlmModelOptionsResult {
   });
 
   const options = useMemo<ModelIdSelectOption[]>(() => {
-    return llmModels.map((model) => {
-      const provider = providers?.find((entry) => entry.id === model.providerId);
-      const catalogProviderType = provider ? resolveProviderCatalogType(provider) : null;
-      const providerIconPath = provider ? resolveProviderIconPath(provider) : null;
-      const catalogModel = catalogProviderType
-        ? catalogMetadata?.get(catalogProviderType)?.find((entry) => entry.id === model.modelId)
-        : null;
+    return llmModels
+      .filter((model) => !persistentOnly || !model.id.startsWith("magpie-"))
+      .map((model) => {
+        const provider = providers?.find((entry) => entry.id === model.providerId);
+        const catalogProviderType = provider ? resolveProviderCatalogType(provider) : null;
+        const providerIconPath = provider ? resolveProviderIconPath(provider) : null;
+        const catalogModel = catalogProviderType
+          ? catalogMetadata?.get(catalogProviderType)?.find((entry) => entry.id === model.modelId)
+          : null;
 
-      return {
-        value: model.id,
-        id: model.modelId,
-        name: model.name,
-        taskType: "llm",
-        releaseDate: catalogModel?.releaseDate ?? null,
-        reasoning: catalogModel?.reasoning ?? null,
-        toolCall: catalogModel?.toolCall ?? null,
-        inputModalities: catalogModel?.inputModalities ?? [],
-        limit: catalogModel?.limit ?? null,
-        cost: catalogModel?.cost ?? null,
-        contextWindow: catalogModel?.contextWindow ?? model.contextLength,
-        inputPricePerMillion:
-          catalogModel?.inputPricePerMillion ?? (model.inputPrice > 0 ? model.inputPrice : null),
-        outputPricePerMillion:
-          catalogModel?.outputPricePerMillion ?? (model.outputPrice > 0 ? model.outputPrice : null),
-        cacheReadPricePerMillion:
-          catalogModel?.cacheReadPricePerMillion ??
-          (model.cacheReadPrice > 0 ? model.cacheReadPrice : null),
-        cacheWritePricePerMillion:
-          catalogModel?.cacheWritePricePerMillion ??
-          (model.cacheWritePrice > 0 ? model.cacheWritePrice : null),
-        source: catalogModel?.source ?? "remote",
-        isCatalogMatched: Boolean(catalogModel),
-        providerIconPath,
-      };
-    });
-  }, [catalogMetadata, llmModels, providers]);
+        return {
+          value: model.id,
+          id: model.modelId,
+          name: model.name,
+          taskType: "llm",
+          releaseDate: catalogModel?.releaseDate ?? null,
+          reasoning: catalogModel?.reasoning ?? null,
+          toolCall: catalogModel?.toolCall ?? null,
+          inputModalities: catalogModel?.inputModalities ?? [],
+          limit: catalogModel?.limit ?? null,
+          cost: catalogModel?.cost ?? null,
+          contextWindow: catalogModel?.contextWindow ?? model.contextLength,
+          inputPricePerMillion:
+            catalogModel?.inputPricePerMillion ?? (model.inputPrice > 0 ? model.inputPrice : null),
+          outputPricePerMillion:
+            catalogModel?.outputPricePerMillion ??
+            (model.outputPrice > 0 ? model.outputPrice : null),
+          cacheReadPricePerMillion:
+            catalogModel?.cacheReadPricePerMillion ??
+            (model.cacheReadPrice > 0 ? model.cacheReadPrice : null),
+          cacheWritePricePerMillion:
+            catalogModel?.cacheWritePricePerMillion ??
+            (model.cacheWritePrice > 0 ? model.cacheWritePrice : null),
+          source: catalogModel?.source ?? "remote",
+          isCatalogMatched: Boolean(catalogModel),
+          providerIconPath,
+        };
+      });
+  }, [catalogMetadata, llmModels, providers, persistentOnly]);
 
   return {
     options,
